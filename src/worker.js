@@ -1447,10 +1447,9 @@ export default {
     const url = new URL(request.url);
     const pathname = url.pathname;
 
-    // Redirect alias domains to canonical .id domain for browser pages only.
-    // API/OAuth/static paths still proxy to IAM so existing integrations don't break.
+    // Redirect alias domains to canonical .id domain (all paths)
     const canonicalHost = DOMAIN_REDIRECTS[url.hostname];
-    if (canonicalHost && !IAM_PATHS.some(p => pathname.startsWith(p)) && !pathname.startsWith('/callback')) {
+    if (canonicalHost) {
       const target = new URL(url);
       target.hostname = canonicalHost;
       return Response.redirect(target.toString(), 301);
