@@ -45,7 +45,7 @@ const ORG_BRANDS = {
       <path d="M66.6753 22.3185L44.5098 20.0822V22.3185H66.6753Z" fill="#DDDDDD"/>
       <path d="M66.7198 67V44.6369H44.5098V67H66.7198Z" fill="#ffffff"/>
     </svg>`,
-    faviconUrl: 'https://hanzo.ai/lovable-uploads/28d53ec4-328f-4812-862b-b9a760bbabae.png',
+    faviconUrl: 'https://cdn.hanzo.ai/img/favicon.png',
     websiteUrl: 'https://hanzo.ai',
     tagline: 'Build the future<br>with <span>AI</span>',
     subtitle: 'The unified platform for AI infrastructure, identity, and compute. Powering the next generation of intelligent applications.',
@@ -65,7 +65,7 @@ const ORG_BRANDS = {
     logoSvg: `<svg viewBox="0 0 120 40" xmlns="http://www.w3.org/2000/svg" aria-label="Lux" role="img">
       <text x="0" y="32" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif" font-size="36" font-weight="700" fill="#ffffff" letter-spacing="-1">Lux</text>
     </svg>`,
-    faviconUrl: 'https://lux.network/assets/lux-site-icons/favicon-32x32.png',
+    faviconUrl: 'https://cdn.lux.network/img/favicon.ico',
     websiteUrl: 'https://lux.network',
     tagline: 'The future of<br><span>blockchain</span>',
     subtitle: 'Multi-consensus blockchain with post-quantum cryptography and high-performance validators. Secure, scalable, interoperable.',
@@ -85,7 +85,7 @@ const ORG_BRANDS = {
     logoSvg: `<svg viewBox="0 0 120 40" xmlns="http://www.w3.org/2000/svg" aria-label="Zoo" role="img">
       <text x="0" y="32" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif" font-size="36" font-weight="700" fill="#ffffff" letter-spacing="-1">Zoo</text>
     </svg>`,
-    faviconUrl: 'https://zoo.ngo/favicon/logo.png',
+    faviconUrl: 'https://cdn.zoo.ngo/img/logo-white.svg',
     websiteUrl: 'https://zoo.ngo',
     tagline: 'Open <span>AI</span><br>research network',
     subtitle: 'Decentralized AI research and science. Community-driven experiments, governance, and breakthrough discoveries.',
@@ -105,7 +105,7 @@ const ORG_BRANDS = {
     logoSvg: `<svg viewBox="0 0 120 40" xmlns="http://www.w3.org/2000/svg" aria-label="Pars" role="img">
       <text x="0" y="32" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif" font-size="36" font-weight="700" fill="#ffffff" letter-spacing="-1">Pars</text>
     </svg>`,
-    faviconUrl: 'https://pars.network/favicon.ico',
+    faviconUrl: 'https://cdn.pars.network/img/logo-white.svg',
     websiteUrl: 'https://pars.network',
     tagline: 'Intelligent<br><span>identity</span>',
     subtitle: 'AI-powered identity verification and access management. Secure, private, and seamless authentication for the modern web.',
