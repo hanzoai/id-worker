@@ -1,0 +1,20 @@
+name = "hanzo-id"
+main = "src/worker.js"
+compatibility_date = "2024-01-01"
+
+# All IAM login domains route through this single worker.
+# The worker resolves org-specific branding from the request hostname.
+# DNS must be proxied through Cloudflare (orange cloud) for each domain.
+routes = [
+  { pattern = "hanzo.id/*", zone_name = "hanzo.id" },
+  { pattern = "lux.id/*", zone_name = "lux.id" },
+  { pattern = "pars.id/*", zone_name = "pars.id" },
+  { pattern = "iam.lux.network/*", zone_name = "lux.network" },
+  { pattern = "id.lux.network/*", zone_name = "lux.network" },
+  { pattern = "id.zoo.network/*", zone_name = "zoo.network" },
+]
+
+[vars]
+IAM_ORIGIN = "https://iam.hanzo.ai"
+# Proxy to the Pages deployment for the marketing site
+MARKETING_ORIGIN = "https://hanzo-id.pages.dev"
