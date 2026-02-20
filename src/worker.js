@@ -1433,10 +1433,28 @@ function validateRedirectOrigin(redirectUrl, fallback) {
 }
 
 // ── Worker fetch handler ─────────────────────────────────────────────
+// Alias domains that should 301 redirect to their canonical .id domain
+const DOMAIN_REDIRECTS = {
+  'iam.lux.network': 'lux.id',
+  'id.lux.network': 'lux.id',
+  'id.zoo.network': 'zoo.id',
+  'id.zoo.ngo': 'zoo.id',
+  'id.pars.network': 'pars.id',
+};
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const pathname = url.pathname;
+
+    // Redirect alias domains to canonical .id domain for browser pages only.
+    // API/OAuth/static paths still proxy to IAM so existing integrations don't break.
+    const canonicalHost = DOMAIN_REDIRECTS[url.hostname];
+    if (canonicalHost && !IAM_PATHS.some(p => pathname.startsWith(p)) && !pathname.startsWith('/callback')) {
+      const target = new URL(url);
+      target.hostname = canonicalHost;
+      return Response.redirect(target.toString(), 301);
+    }
 
     // Resolve org brand from request hostname
     const brand = getOrgBrand(url.hostname);
