@@ -844,7 +844,11 @@ function getLoginPage(url, brand) {
             credentials: 'include',
           });
 
-          var data = await res.json();
+          var text = await res.text();
+          var data;
+          try { data = JSON.parse(text); } catch (e) {
+            throw new Error('Server returned invalid response (HTTP ' + res.status + ')');
+          }
           if (data.status === 'ok' && data.data) {
             if (redirectUri) {
               window.location.href = redirectUri + '?code=' + encodeURIComponent(data.data) + '&state=' + encodeURIComponent(state);
@@ -1135,7 +1139,11 @@ function getSignupPage(url, brand) {
             credentials: 'include',
           });
 
-          var data = await res.json();
+          var text = await res.text();
+          var data;
+          try { data = JSON.parse(text); } catch (e) {
+            throw new Error('Server returned invalid response (HTTP ' + res.status + ')');
+          }
           if (data.status === 'ok' && data.data) {
             if (redirectUri) {
               window.location.href = redirectUri + '?code=' + encodeURIComponent(data.data) + '&state=' + encodeURIComponent(state);
