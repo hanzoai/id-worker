@@ -33,9 +33,9 @@ const ORG_BRANDS = {
   hanzo: {
     displayName: 'Hanzo',
     orgId: 'hanzo',
-    accentColor: '#fd4444',
-    accentColorRgb: '253, 68, 68',
-    gradientEnd: '#200505',
+    accentColor: '#ffffff',
+    accentColorRgb: '255, 255, 255',
+    gradientEnd: '#0a0a0a',
     logoSvg: `<svg viewBox="0 0 67 67" xmlns="http://www.w3.org/2000/svg" aria-label="Hanzo" role="img">
       <path d="M22.21 67V44.6369H0V67H22.21Z" fill="#ffffff"/>
       <path d="M0 44.6369L22.21 46.8285V44.6369H0Z" fill="#DDDDDD"/>
@@ -59,9 +59,9 @@ const ORG_BRANDS = {
   lux: {
     displayName: 'Lux',
     orgId: 'lux',
-    accentColor: '#a1a1aa',
-    accentColorRgb: '161, 161, 170',
-    gradientEnd: '#0a0a12',
+    accentColor: '#ffffff',
+    accentColorRgb: '255, 255, 255',
+    gradientEnd: '#0a0a0a',
     logoSvg: `<svg viewBox="0 0 120 40" xmlns="http://www.w3.org/2000/svg" aria-label="Lux" role="img">
       <text x="0" y="32" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif" font-size="36" font-weight="700" fill="#ffffff" letter-spacing="-1">Lux</text>
     </svg>`,
@@ -79,9 +79,9 @@ const ORG_BRANDS = {
   zoo: {
     displayName: 'Zoo',
     orgId: 'zoo',
-    accentColor: '#10b981',
-    accentColorRgb: '16, 185, 129',
-    gradientEnd: '#021a0d',
+    accentColor: '#ffffff',
+    accentColorRgb: '255, 255, 255',
+    gradientEnd: '#0a0a0a',
     logoSvg: `<svg viewBox="0 0 120 40" xmlns="http://www.w3.org/2000/svg" aria-label="Zoo" role="img">
       <text x="0" y="32" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif" font-size="36" font-weight="700" fill="#ffffff" letter-spacing="-1">Zoo</text>
     </svg>`,
@@ -99,9 +99,9 @@ const ORG_BRANDS = {
   pars: {
     displayName: 'Pars',
     orgId: 'pars',
-    accentColor: '#3b82f6',
-    accentColorRgb: '59, 130, 246',
-    gradientEnd: '#020818',
+    accentColor: '#ffffff',
+    accentColorRgb: '255, 255, 255',
+    gradientEnd: '#0a0a0a',
     logoSvg: `<svg viewBox="0 0 120 40" xmlns="http://www.w3.org/2000/svg" aria-label="Pars" role="img">
       <text x="0" y="32" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif" font-size="36" font-weight="700" fill="#ffffff" letter-spacing="-1">Pars</text>
     </svg>`,
