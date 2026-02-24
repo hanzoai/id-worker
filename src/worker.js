@@ -22,6 +22,7 @@ const CLIENT_APP_MAP = {
   'hanzo-team-client-id': { application: 'app-team', organization: 'hanzo' },
   'hanzo-auto-client-id': { application: 'app-auto', organization: 'hanzo' },
   'hanzobot-client-id': { application: 'app-hanzobot', organization: 'hanzo' },
+  'hanzo-mpc-client-id': { application: 'app-mpc', organization: 'hanzo' },
   'adnexus-app-client-id': { application: 'app-adnexus', organization: 'adnexus' },
   'lux-app-client-id': { application: 'app-lux', organization: 'lux' },
   'zoo-app-client-id': { application: 'app-zoo', organization: 'zoo' },
@@ -1388,6 +1389,10 @@ const PLATFORM_GITHUB_CALLBACK = 'https://hanzo.id/callback/platform/github';
 const PLATFORM_IAM_CALLBACK = 'https://hanzo.id/callback/platform/hanzo';
 const DEFAULT_PLATFORM_IAM_CLIENT_ID = 'hanzo-platform-client-id';
 
+// MPC OAuth
+const MPC_IAM_CALLBACK = 'https://hanzo.id/callback/mpc/hanzo';
+const DEFAULT_MPC_IAM_CLIENT_ID = 'hanzo-mpc-client-id';
+
 // Map of app-specific callback paths to their target redirect origins
 const APP_CALLBACKS = {
   '/callback/platform/github': {
@@ -1406,6 +1411,10 @@ const APP_CALLBACKS = {
     defaultRedirect: 'https://platform.hanzo.ai/login',
     provider: 'hanzo',
   },
+  '/callback/mpc/hanzo': {
+    defaultRedirect: 'https://mpc.hanzo.ai/auth/callback',
+    provider: 'hanzo',
+  },
 };
 
 // Allowed redirect origins for OAuth callbacks. Tokens are never sent to
@@ -1419,6 +1428,7 @@ const ALLOWED_REDIRECT_ORIGINS = new Set([
   'https://kms.hanzo.ai',
   'https://cloud.hanzo.ai',
   'https://docs.hanzo.ai',
+  'https://mpc.hanzo.ai',
   'https://hanzo.ai',
   'https://hanzo.id',
   'http://localhost:3000',
@@ -1490,6 +1500,32 @@ export default {
       const authUrl = new URL(`${url.origin}/login/oauth/authorize`);
       authUrl.searchParams.set('client_id', clientId);
       authUrl.searchParams.set('redirect_uri', PLATFORM_IAM_CALLBACK);
+      authUrl.searchParams.set('response_type', 'code');
+      authUrl.searchParams.set('scope', scope);
+      authUrl.searchParams.set('state', state);
+
+      return Response.redirect(authUrl.toString(), 302);
+    }
+
+    // Initiate MPC IAM OAuth
+    if (pathname === '/oauth/hanzo/mpc') {
+      const redirect = validateRedirectOrigin(
+        url.searchParams.get('redirect') || 'https://mpc.hanzo.ai/auth/callback',
+        'https://mpc.hanzo.ai/auth/callback',
+      );
+      const clientId =
+        url.searchParams.get('client_id') ||
+        env.MPC_IAM_CLIENT_ID ||
+        env.IAM_CLIENT_ID ||
+        DEFAULT_MPC_IAM_CLIENT_ID;
+      const scope = url.searchParams.get('scope') || 'openid profile email';
+      const nonce = crypto.randomUUID();
+      const statePayload = JSON.stringify({ redirect, clientId, nonce });
+      const state = btoa(statePayload);
+
+      const authUrl = new URL(`${url.origin}/login/oauth/authorize`);
+      authUrl.searchParams.set('client_id', clientId);
+      authUrl.searchParams.set('redirect_uri', MPC_IAM_CALLBACK);
       authUrl.searchParams.set('response_type', 'code');
       authUrl.searchParams.set('scope', scope);
       authUrl.searchParams.set('state', state);
@@ -1615,6 +1651,88 @@ export default {
         redirect_uri: PLATFORM_IAM_CALLBACK,
       };
       const clientSecret = env.PLATFORM_IAM_CLIENT_SECRET || env.IAM_CLIENT_SECRET;
+      if (clientSecret) {
+        tokenPayload.client_secret = clientSecret;
+      }
+
+      const tokenRes = await fetch(`${IAM_ORIGIN}/api/login/oauth/access_token`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: JSON.stringify(tokenPayload),
+      });
+
+      const tokens = await tokenRes.json().catch(() => ({}));
+
+      if (tokens.access_token) {
+        redirectUrl.searchParams.set('access_token', tokens.access_token);
+        redirectUrl.searchParams.set('refresh_token', tokens.refresh_token || '');
+        redirectUrl.searchParams.set(
+          'expires_at',
+          tokens.expires_in
+            ? String(Math.floor(Date.now() / 1000) + Number(tokens.expires_in))
+            : '0',
+        );
+        redirectUrl.searchParams.set('provider', 'hanzo');
+        redirectUrl.searchParams.set('status', '200');
+      } else {
+        redirectUrl.searchParams.set('error', tokens.error || 'token_exchange_failed');
+        redirectUrl.searchParams.set(
+          'error_description',
+          tokens.error_description || tokens.message || 'Failed to exchange code',
+        );
+      }
+
+      return Response.redirect(redirectUrl.toString(), 302);
+    }
+
+    // MPC IAM callback — exchange authorization code for tokens
+    if (pathname === '/callback/mpc/hanzo') {
+      const code = url.searchParams.get('code');
+      const state = url.searchParams.get('state');
+      const directAccessToken = url.searchParams.get('access_token');
+      const directRefreshToken = url.searchParams.get('refresh_token');
+
+      const defaultMPCRedirect = 'https://mpc.hanzo.ai/auth/callback';
+      let redirect = defaultMPCRedirect;
+      try {
+        const decoded = JSON.parse(atob(state || ''));
+        if (decoded.redirect) {
+          redirect = validateRedirectOrigin(decoded.redirect, defaultMPCRedirect);
+        }
+      } catch {}
+
+      const redirectUrl = new URL(redirect);
+
+      if (directAccessToken) {
+        redirectUrl.searchParams.set('access_token', directAccessToken);
+        redirectUrl.searchParams.set('refresh_token', directRefreshToken || '');
+        redirectUrl.searchParams.set('provider', 'hanzo');
+        redirectUrl.searchParams.set('status', '200');
+        return Response.redirect(redirectUrl.toString(), 302);
+      }
+
+      if (!code) {
+        redirectUrl.searchParams.set('error', 'no_code');
+        return Response.redirect(redirectUrl.toString(), 302);
+      }
+
+      let clientId =
+        env.MPC_IAM_CLIENT_ID || env.IAM_CLIENT_ID || DEFAULT_MPC_IAM_CLIENT_ID;
+      try {
+        const decoded = JSON.parse(atob(state || ''));
+        if (decoded.clientId) clientId = decoded.clientId;
+      } catch {}
+
+      const tokenPayload = {
+        grant_type: 'authorization_code',
+        code,
+        client_id: clientId,
+        redirect_uri: MPC_IAM_CALLBACK,
+      };
+      const clientSecret = env.MPC_IAM_CLIENT_SECRET || env.IAM_CLIENT_SECRET;
       if (clientSecret) {
         tokenPayload.client_secret = clientSecret;
       }
