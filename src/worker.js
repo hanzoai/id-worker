@@ -25,6 +25,8 @@ const CLIENT_APP_MAP = {
   'hanzo-mpc-client-id': { application: 'app-mpc', organization: 'hanzo' },
   'adnexus-app-client-id': { application: 'app-adnexus', organization: 'adnexus' },
   'lux-app-client-id': { application: 'app-lux', organization: 'lux' },
+  'lux-chat-client-id': { application: 'app-lux-chat', organization: 'lux' },
+  'hanzo-chat-client-id': { application: 'app-hanzo-chat', organization: 'hanzo' },
   'zoo-app-client-id': { application: 'app-zoo', organization: 'zoo' },
   'pars-app-client-id': { application: 'app-pars', organization: 'pars' },
 };
