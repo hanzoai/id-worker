@@ -12,22 +12,36 @@ const MARKETING_ORIGIN = 'https://hanzo-id.pages.dev';
 // Casdoor's /api/get-app-login is broken for our version, so we maintain this
 // as a fallback for social login callback processing.
 const CLIENT_APP_MAP = {
+  // Hanzo org
   'hanzo-platform-client-id': { application: 'app-platform', organization: 'hanzo' },
   'hanzo-app-client-id': { application: 'app-hanzo', organization: 'hanzo' },
+  'app-hanzo': { application: 'app-hanzo', organization: 'hanzo' },
   'hanzo-console-client-id': { application: 'app-console', organization: 'hanzo' },
   'hanzo-cloud-client-id': { application: 'app-cloud', organization: 'hanzo' },
+  'kms-client': { application: 'app-kms', organization: 'hanzo' },
   'hanzo-kms-client-id': { application: 'app-kms', organization: 'hanzo' },
   'hanzo-commerce-client-id': { application: 'app-commerce', organization: 'hanzo' },
-  'hanzo-flow-client-id': { application: 'app-flow', organization: 'hanzo' },
   'hanzo-team-client-id': { application: 'app-team', organization: 'hanzo' },
-  'hanzo-auto-client-id': { application: 'app-auto', organization: 'hanzo' },
   'hanzobot-client-id': { application: 'app-hanzobot', organization: 'hanzo' },
-  'hanzo-mpc-client-id': { application: 'app-mpc', organization: 'hanzo' },
+  'chat-app': { application: 'app-chat', organization: 'hanzo' },
+  'hanzo-chat-client-id': { application: 'app-hanzo-chat', organization: 'hanzo' },
+  'hanzo-web3': { application: 'app-hanzo-web3', organization: 'hanzo' },
+  'app-analytics': { application: 'app-analytics', organization: 'hanzo' },
+  'app-insights': { application: 'app-insights', organization: 'hanzo' },
+  'bootnode-web': { application: 'app-bootnode', organization: 'hanzo' },
+  'zt-console': { application: 'app-zt-console', organization: 'hanzo' },
+  // Adnexus org
   'adnexus-app-client-id': { application: 'app-adnexus', organization: 'adnexus' },
+  // Lux org
   'lux-app-client-id': { application: 'app-lux', organization: 'lux' },
   'lux-chat-client-id': { application: 'app-lux-chat', organization: 'lux' },
-  'hanzo-chat-client-id': { application: 'app-hanzo-chat', organization: 'hanzo' },
+  'lux-kms-client': { application: 'app-lux-kms', organization: 'lux' },
+  'lux-web3': { application: 'app-lux-web3', organization: 'lux' },
+  'lux-mpc': { application: 'app-mpc', organization: 'lux' },
+  // Zoo org
   'zoo-app-client-id': { application: 'app-zoo', organization: 'zoo' },
+  'zoo-web3': { application: 'app-zoo-web3', organization: 'zoo' },
+  // Pars org
   'pars-app-client-id': { application: 'app-pars', organization: 'pars' },
 };
 
@@ -690,30 +704,39 @@ function getLoginPage(url, brand) {
 
       // Fallback map used only if IAM app lookup is unavailable.
       var fallbackAppMap = {
+        // Hanzo org — match by client_id (both legacy and current formats)
         'hanzo-app-client-id': { app: 'app-hanzo', org: 'hanzo' },
+        'app-hanzo': { app: 'app-hanzo', org: 'hanzo' },
         'hanzo-console-client-id': { app: 'app-console', org: 'hanzo' },
         'hanzo-cloud-client-id': { app: 'app-cloud', org: 'hanzo' },
         'hanzo-commerce-client-id': { app: 'app-commerce', org: 'hanzo' },
         'hanzo-platform-client-id': { app: 'app-platform', org: 'hanzo' },
-        'hanzo-auto-client-id': { app: 'app-auto', org: 'hanzo' },
-        'hanzo-flow-client-id': { app: 'app-flow', org: 'hanzo' },
         'hanzobot-client-id': { app: 'app-hanzobot', org: 'hanzo' },
         'hanzo-team-client-id': { app: 'app-team', org: 'hanzo' },
+        'kms-client': { app: 'app-kms', org: 'hanzo' },
         'hanzo-kms-client-id': { app: 'app-kms', org: 'hanzo' },
         'hanzo-kms': { app: 'app-kms', org: 'hanzo' },
-        'bootnode-web': { app: 'app-bootnode', org: 'hanzo' },
+        'chat-app': { app: 'app-chat', org: 'hanzo' },
+        'hanzo-chat-client-id': { app: 'app-hanzo-chat', org: 'hanzo' },
         'hanzo-web3': { app: 'app-hanzo-web3', org: 'hanzo' },
-        'adnexus-app-client-id': { app: 'app-adnexus', org: 'adnexus' },
-        'zoo-app-client-id': { app: 'app-zoo', org: 'zoo' },
-        'lux-app-client-id': { app: 'app-lux', org: 'lux' },
-        'pars-app-client-id': { app: 'app-pars', org: 'pars' },
-        'lux-web3': { app: 'app-lux-web3', org: 'lux' },
-        'zoo-web3': { app: 'app-zoo-web3', org: 'zoo' },
-        'hanzo-cloud': { app: 'hanzo-cloud', org: 'hanzo' },
-        'zoo-cloud': { app: 'zoo-cloud', org: 'zoo' },
-        'lux-cloud': { app: 'lux-cloud', org: 'lux' },
-        'pars-cloud': { app: 'pars-cloud', org: 'pars' },
+        'app-analytics': { app: 'app-analytics', org: 'hanzo' },
+        'app-insights': { app: 'app-insights', org: 'hanzo' },
+        'bootnode-web': { app: 'app-bootnode', org: 'hanzo' },
+        'zt-console': { app: 'app-zt-console', org: 'hanzo' },
         'b108dacba027db36ec26': { app: 'app-hanzo-vm', org: 'hanzo' },
+        // Adnexus org
+        'adnexus-app-client-id': { app: 'app-adnexus', org: 'adnexus' },
+        // Lux org
+        'lux-app-client-id': { app: 'app-lux', org: 'lux' },
+        'lux-chat-client-id': { app: 'app-lux-chat', org: 'lux' },
+        'lux-kms-client': { app: 'app-lux-kms', org: 'lux' },
+        'lux-web3': { app: 'app-lux-web3', org: 'lux' },
+        'lux-mpc': { app: 'app-mpc', org: 'lux' },
+        // Zoo org
+        'zoo-app-client-id': { app: 'app-zoo', org: 'zoo' },
+        'zoo-web3': { app: 'app-zoo-web3', org: 'zoo' },
+        // Pars org
+        'pars-app-client-id': { app: 'app-pars', org: 'pars' },
       };
       var fallback = fallbackAppMap[clientId] || {};
       var loginApp = fallback.app || '';
@@ -1033,13 +1056,21 @@ function getSignupPage(url, brand) {
 
       var fallbackAppNameMap = {
         'hanzo-app-client-id': 'app-hanzo',
+        'app-hanzo': 'app-hanzo',
         'hanzo-console-client-id': 'app-console',
         'hanzo-cloud-client-id': 'app-cloud',
         'hanzo-platform-client-id': 'app-platform',
+        'kms-client': 'app-kms',
         'hanzo-kms-client-id': 'app-kms',
+        'chat-app': 'app-chat',
+        'hanzo-chat-client-id': 'app-hanzo-chat',
+        'hanzo-team-client-id': 'app-team',
+        'hanzobot-client-id': 'app-hanzobot',
         'hanzo-web3': 'app-hanzo-web3',
         'lux-web3': 'app-lux-web3',
-        'lux-cloud': 'lux-cloud',
+        'lux-app-client-id': 'app-lux',
+        'zoo-app-client-id': 'app-zoo',
+        'pars-app-client-id': 'app-pars',
       };
       var signupApp = fallbackAppNameMap[clientId] || '';
       var signupOrg = '';
