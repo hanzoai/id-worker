@@ -37,12 +37,14 @@ const CLIENT_APP_MAP = {
   'lux-chat-client-id': { application: 'app-lux-chat', organization: 'lux' },
   'lux-kms-client': { application: 'app-lux-kms', organization: 'lux' },
   'lux-web3': { application: 'app-lux-web3', organization: 'lux' },
-  'lux-mpc': { application: 'app-mpc', organization: 'lux' },
+  'lux-mpc': { application: 'app-lux-mpc', organization: 'lux' },
   // Zoo org
   'zoo-app-client-id': { application: 'app-zoo', organization: 'zoo' },
   'zoo-web3': { application: 'app-zoo-web3', organization: 'zoo' },
+  'zoo-mpc': { application: 'app-zoo-mpc', organization: 'zoo' },
   // Pars org
   'pars-app-client-id': { application: 'app-pars', organization: 'pars' },
+  'pars-mpc': { application: 'app-pars-mpc', organization: 'pars' },
 };
 
 // ── Per-org branding ──────────────────────────────────────────────────
@@ -731,12 +733,14 @@ function getLoginPage(url, brand) {
         'lux-chat-client-id': { app: 'app-lux-chat', org: 'lux' },
         'lux-kms-client': { app: 'app-lux-kms', org: 'lux' },
         'lux-web3': { app: 'app-lux-web3', org: 'lux' },
-        'lux-mpc': { app: 'app-mpc', org: 'lux' },
+        'lux-mpc': { app: 'app-lux-mpc', org: 'lux' },
         // Zoo org
         'zoo-app-client-id': { app: 'app-zoo', org: 'zoo' },
         'zoo-web3': { app: 'app-zoo-web3', org: 'zoo' },
+        'zoo-mpc': { app: 'app-zoo-mpc', org: 'zoo' },
         // Pars org
         'pars-app-client-id': { app: 'app-pars', org: 'pars' },
+        'pars-mpc': { app: 'app-pars-mpc', org: 'pars' },
       };
       var fallback = fallbackAppMap[clientId] || {};
       var loginApp = fallback.app || '';
@@ -798,7 +802,7 @@ function getLoginPage(url, brand) {
         if (codeChallengeMethod) params.set('code_challenge_method', codeChallengeMethod);
         if (codeChallenge) params.set('code_challenge', codeChallenge);
 
-        window.location.href = origin + '/login/oauth/authorize?' + params.toString();
+        window.location.href = origin + '/oauth/authorize?' + params.toString();
       }
 
       function showComingSoon(e, name) {
@@ -1109,7 +1113,7 @@ function getSignupPage(url, brand) {
           state: state,
           provider: provider,
         });
-        window.location.href = origin + '/login/oauth/authorize?' + params.toString();
+        window.location.href = origin + '/oauth/authorize?' + params.toString();
       }
 
       document.getElementById('btn-google').addEventListener('click', function(e) {
@@ -1485,12 +1489,9 @@ function validateRedirectOrigin(redirectUrl, fallback) {
 
 // ── Worker fetch handler ─────────────────────────────────────────────
 // Alias domains that should 301 redirect to their canonical .id domain
+// id.lux.network, id.zoo.network, id.pars.network are now served directly (not redirected)
 const DOMAIN_REDIRECTS = {
-  'iam.lux.network': 'lux.id',
-  'id.lux.network': 'lux.id',
-  'id.zoo.network': 'zoo.id',
   'id.zoo.ngo': 'zoo.id',
-  'id.pars.network': 'pars.id',
 };
 
 export default {
@@ -1530,7 +1531,7 @@ export default {
       const statePayload = JSON.stringify({ redirect, clientId, nonce });
       const state = btoa(statePayload);
 
-      const authUrl = new URL(`${url.origin}/login/oauth/authorize`);
+      const authUrl = new URL(`${url.origin}/oauth/authorize`);
       authUrl.searchParams.set('client_id', clientId);
       authUrl.searchParams.set('redirect_uri', PLATFORM_IAM_CALLBACK);
       authUrl.searchParams.set('response_type', 'code');
@@ -1556,7 +1557,7 @@ export default {
       const statePayload = JSON.stringify({ redirect, clientId, nonce });
       const state = btoa(statePayload);
 
-      const authUrl = new URL(`${url.origin}/login/oauth/authorize`);
+      const authUrl = new URL(`${url.origin}/oauth/authorize`);
       authUrl.searchParams.set('client_id', clientId);
       authUrl.searchParams.set('redirect_uri', MPC_IAM_CALLBACK);
       authUrl.searchParams.set('response_type', 'code');
@@ -1842,6 +1843,46 @@ export default {
       return newResponse;
     }
 
+    // POST /oauth/introspect → proxy to IAM's /api/login/oauth/introspect (RFC 7662)
+    if (pathname === '/oauth/introspect' && request.method === 'POST') {
+      const iamUrl = new URL('/api/login/oauth/introspect' + url.search, IAM_ORIGIN);
+      const headers = new Headers(request.headers);
+      headers.set('Host', 'iam.hanzo.ai');
+      return fetch(new Request(iamUrl.toString(), {
+        method: 'POST', headers, body: request.body, redirect: 'manual',
+      }));
+    }
+
+    // POST /oauth/revoke → proxy to IAM's /api/login/oauth/revoke (RFC 7009)
+    if (pathname === '/oauth/revoke' && request.method === 'POST') {
+      const iamUrl = new URL('/api/login/oauth/revoke' + url.search, IAM_ORIGIN);
+      const headers = new Headers(request.headers);
+      headers.set('Host', 'iam.hanzo.ai');
+      return fetch(new Request(iamUrl.toString(), {
+        method: 'POST', headers, body: request.body, redirect: 'manual',
+      }));
+    }
+
+    // GET /oauth/userinfo → proxy to IAM's /api/userinfo (OIDC Core)
+    if (pathname === '/oauth/userinfo') {
+      const iamUrl = new URL('/api/userinfo' + url.search, IAM_ORIGIN);
+      const headers = new Headers(request.headers);
+      headers.set('Host', 'iam.hanzo.ai');
+      return fetch(new Request(iamUrl.toString(), {
+        method: request.method, headers, redirect: 'manual',
+      }));
+    }
+
+    // GET /oauth/logout → proxy to IAM's /login/oauth/logout (OIDC)
+    if (pathname === '/oauth/logout') {
+      const iamUrl = new URL('/login/oauth/logout' + url.search, IAM_ORIGIN);
+      const headers = new Headers(request.headers);
+      headers.set('Host', 'iam.hanzo.ai');
+      return fetch(new Request(iamUrl.toString(), {
+        method: request.method, headers, redirect: 'manual',
+      }));
+    }
+
     // OAuth callback from social providers (GitHub, Google, etc.)
     // Handle server-side: read context cookie, call IAM /api/login, redirect to app.
     // Casdoor's SPA callback relies on sessionStorage which breaks through the proxy,
@@ -1999,9 +2040,9 @@ export default {
       return new Response(response.body, response);
     }
 
-    // /login/oauth/authorize — if it has a provider param, construct the
-    // social provider OAuth URL and redirect directly. Otherwise serve
-    // our custom login page.
+    // /login/oauth/authorize (legacy backward compat) — if it has a provider
+    // param, construct the social provider OAuth URL and redirect directly.
+    // Otherwise serve our custom login page. New clients use /oauth/authorize.
     if (pathname === '/login/oauth/authorize') {
       if (url.searchParams.has('provider')) {
         const provider = url.searchParams.get('provider');
@@ -2130,7 +2171,16 @@ export default {
         const contentType = response.headers.get('content-type') || '';
         if (contentType.includes('json') || contentType.includes('text')) {
           const body = await response.text();
-          const rewritten = body.replaceAll('iam.hanzo.ai', 'hanzo.id');
+          let rewritten = body.replaceAll('iam.hanzo.ai', 'hanzo.id');
+          // Normalize legacy Casdoor paths to RFC standard paths
+          rewritten = rewritten.replaceAll('/login/oauth/authorize', '/oauth/authorize');
+          rewritten = rewritten.replaceAll('/api/login/oauth/access_token', '/oauth/token');
+          rewritten = rewritten.replaceAll('/api/login/oauth/refresh_token', '/oauth/token');
+          rewritten = rewritten.replaceAll('/api/login/oauth/introspect', '/oauth/introspect');
+          rewritten = rewritten.replaceAll('/api/login/oauth/revoke', '/oauth/revoke');
+          rewritten = rewritten.replaceAll('/login/oauth/logout', '/oauth/logout');
+          rewritten = rewritten.replaceAll('/api/login/oauth/device', '/oauth/device');
+          rewritten = rewritten.replaceAll('/api/userinfo', '/oauth/userinfo');
           const newHeaders = new Headers(response.headers);
           const location = newHeaders.get('location');
           if (location && location.includes('iam.hanzo.ai')) {
