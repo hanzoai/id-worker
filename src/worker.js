@@ -1496,6 +1496,31 @@ const DOMAIN_REDIRECTS = {
 
 export default {
   async fetch(request, env, ctx) {
+    const origin = request.headers.get('Origin');
+
+    // Handle CORS preflight with strict origin allowlist
+    if (request.method === 'OPTIONS' && origin) {
+      if (isOriginAllowed(origin)) {
+        return new Response(null, {
+          status: 204,
+          headers: {
+            'Access-Control-Allow-Origin': origin,
+            'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+            'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Auth-Token',
+            'Access-Control-Allow-Credentials': 'true',
+            'Access-Control-Max-Age': '86400',
+          },
+        });
+      }
+      return new Response(null, { status: 403 });
+    }
+
+    // Process the request, then apply security headers to the response
+    const response = await this._handleRequest(request, env, ctx);
+    return applyCorsHeaders(response, origin);
+  },
+
+  async _handleRequest(request, env, ctx) {
     const url = new URL(request.url);
     const pathname = url.pathname;
 
@@ -2276,3 +2301,51 @@ export default {
     });
   },
 };
+
+// Apply strict CORS headers to any response, stripping CF Transform Rule wildcards.
+function applyCorsHeaders(response, origin) {
+  const ALLOWED_SUFFIXES = [
+    '.hanzo.ai', '.hanzo.id', '.hanzo.bot', '.hanzo.chat',
+    '.lux.id', '.lux.network', '.pars.id', '.pars.network',
+    '.zoo.id', '.zoo.network', '.zoo.ngo',
+    'localhost', '127.0.0.1',
+  ];
+
+  const headers = new Headers(response.headers);
+
+  // Strip any CF Transform Rule CORS headers
+  headers.delete('Access-Control-Allow-Origin');
+  headers.delete('Access-Control-Allow-Methods');
+  headers.delete('Access-Control-Allow-Headers');
+  headers.delete('Access-Control-Allow-Credentials');
+  headers.delete('Access-Control-Max-Age');
+
+  // Add security headers
+  headers.set('Strict-Transport-Security', 'max-age=63072000; includeSubDomains; preload');
+  headers.set('X-Content-Type-Options', 'nosniff');
+  if (!headers.has('X-Frame-Options')) {
+    headers.set('X-Frame-Options', 'DENY');
+  }
+
+  // Only reflect allowed origins
+  if (origin) {
+    try {
+      const h = new URL(origin).hostname;
+      const allowed = ALLOWED_SUFFIXES.some(s =>
+        s.startsWith('.') ? h.endsWith(s) || h === s.slice(1) : h === s
+      );
+      if (allowed) {
+        headers.set('Access-Control-Allow-Origin', origin);
+        headers.set('Access-Control-Allow-Credentials', 'true');
+        headers.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+        headers.set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Auth-Token');
+      }
+    } catch {}
+  }
+
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
