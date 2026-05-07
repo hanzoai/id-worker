@@ -9,7 +9,7 @@ const IAM_ORIGIN = 'https://iam.hanzo.ai';
 const MARKETING_ORIGIN = 'https://hanzo-id.pages.dev';
 
 // Client ID → application/organization map.
-// Casdoor's /api/get-app-login is broken for our version, so we maintain this
+// IAM's /api/get-app-login is broken for our version, so we maintain this
 // as a fallback for social login callback processing.
 const CLIENT_APP_MAP = {
   // Hanzo org
@@ -845,7 +845,7 @@ function getLoginPage(url, brand) {
         e.preventDefault();
         socialLogin('provider-github');
       });
-      // Web3 wallet login — client-side EIP-712 typed data flow (matches Casdoor MetaMask IDP)
+      // Web3 wallet login — client-side EIP-712 typed data flow (matches IAM MetaMask IDP)
       async function walletLogin() {
         var errEl = document.getElementById('error-msg');
         if (typeof window.ethereum === 'undefined') {
@@ -1934,14 +1934,14 @@ export default {
 
     // OAuth callback from social providers (GitHub, Google, etc.)
     // Handle server-side: read context cookie, call IAM /api/login, redirect to app.
-    // Casdoor's SPA callback relies on sessionStorage which breaks through the proxy,
+    // IAM's SPA callback relies on sessionStorage which breaks through the proxy,
     // so we handle the full exchange here instead.
     if (pathname === '/callback') {
       const code = url.searchParams.get('code');
       const state = url.searchParams.get('state');
 
       if (code && state) {
-        // Casdoor's state for social logins is a base64-encoded query string:
+        // IAM's state for social logins is a base64-encoded query string:
         //   btoa("?client_id=...&redirect_uri=...&provider=...&method=...&application=...")
         // Decode it to extract the application, provider, and redirect_uri.
         let stateParams = new URLSearchParams();
@@ -1980,10 +1980,10 @@ export default {
         }
 
         // Call IAM's /api/login to process the social provider callback server-side.
-        // This replicates what Casdoor's SPA callback component does.
+        // This replicates what IAM's SPA callback component does.
         // IAM expects state to be the authState config value ("hanzo"), NOT the
-        // Casdoor-encoded state from GitHub. The encoded state was only for context extraction.
-        // We use type:'token' (implicit) because our Casdoor version has a bug where
+        // IAM-encoded state from GitHub. The encoded state was only for context extraction.
+        // We use type:'token' (implicit) because our IAM version has a bug where
         // type:'code' maps to an empty grant_type and fails the grant_type check.
         const loginRes = await fetch(`${IAM_ORIGIN}/api/login`, {
           method: 'POST',
@@ -2142,7 +2142,7 @@ export default {
         }
 
         // Store OAuth context in a cookie so the /callback handler can use it.
-        // The Casdoor SPA normally stores this in sessionStorage, but since we handle
+        // The IAM SPA normally stores this in sessionStorage, but since we handle
         // the callback server-side, we need it in a cookie the worker can read.
         const oauthContext = JSON.stringify({
           application: appName,
@@ -2154,7 +2154,7 @@ export default {
         const oauthContextCookie = `_oauth_ctx=${encodeURIComponent(btoa(oauthContext))}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600`;
 
         // Proxy all social provider logins (GitHub, Google, etc.) to IAM.
-        // IAM (Casdoor) manages the full OAuth flow with its own state tracking,
+        // IAM (IAM) manages the full OAuth flow with its own state tracking,
         // so it can correctly process the callback when the provider redirects back.
         const iamUrl = new URL(pathname + url.search, IAM_ORIGIN);
         const headers = new Headers(request.headers);
@@ -2221,7 +2221,7 @@ export default {
         if (contentType.includes('json') || contentType.includes('text')) {
           const body = await response.text();
           let rewritten = body.replaceAll('iam.hanzo.ai', 'hanzo.id');
-          // Normalize legacy Casdoor paths to RFC standard paths
+          // Normalize legacy IAM paths to RFC standard paths
           rewritten = rewritten.replaceAll('/login/oauth/authorize', '/oauth/authorize');
           rewritten = rewritten.replaceAll('/api/login/oauth/access_token', '/oauth/token');
           rewritten = rewritten.replaceAll('/api/login/oauth/refresh_token', '/oauth/token');
@@ -2271,7 +2271,7 @@ export default {
         status: 302,
         headers: {
           Location: '/login?prompt=login',
-          'Set-Cookie': 'casdoor_session_id=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax',
+          'Set-Cookie': 'iam_session_id=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax',
         },
       });
     }
