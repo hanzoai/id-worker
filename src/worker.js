@@ -137,21 +137,45 @@ const ORG_BRANDS = {
   },
 };
 
-// Domain → org key mapping
-const DOMAIN_ORG_MAP = {
-  'hanzo.id': 'hanzo',
-  'lux.id': 'lux',
-  'id.lux.network': 'lux',
-  'iam.lux.network': 'lux',
-  'zoo.id': 'zoo',
-  'id.zoo.network': 'zoo',
-  'id.zoo.ngo': 'zoo',
-  'pars.id': 'pars',
-  'id.pars.network': 'pars',
-};
+// Domain → org resolution.
+//
+// Source of truth: `env.IAM_TENANT_CONFIG_JSON` (wrangler.toml `[vars]` or
+// a Cloudflare secret). Shape: `{ "<host>": { "orgId": "<slug>" }, ... }`.
+// Same JSON catalog format as the Next.js side (lib/config.ts), so the same
+// blob can feed both. Falls back to the `IAM_DEFAULT_ORG` env var, then
+// finally to `'hanzo'`. NO hardcoded hostnames here — adding a tenant
+// means updating a wrangler var, never editing this file.
+let cachedDomainOrgMap = null;
+function getDomainOrgMap(env) {
+  if (cachedDomainOrgMap) return cachedDomainOrgMap;
+  const raw = env && env.IAM_TENANT_CONFIG_JSON;
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        const out = {};
+        for (const [host, entry] of Object.entries(parsed)) {
+          if (entry && typeof entry === 'object' && typeof entry.orgId === 'string') {
+            out[host] = entry.orgId;
+          }
+        }
+        cachedDomainOrgMap = out;
+        return cachedDomainOrgMap;
+      }
+    } catch {
+      // Bad JSON — fall through to defaults.
+    }
+  }
+  cachedDomainOrgMap = {};
+  return cachedDomainOrgMap;
+}
 
-function getOrgBrand(hostname) {
-  const orgKey = DOMAIN_ORG_MAP[hostname];
+function getOrgBrand(hostname, env) {
+  const map = getDomainOrgMap(env);
+  const orgKey =
+    map[hostname]
+    || (env && env.IAM_DEFAULT_ORG)
+    || 'hanzo';
   return ORG_BRANDS[orgKey] || ORG_BRANDS.hanzo;
 }
 
@@ -164,6 +188,8 @@ const LOGIN_PATHS = [
 
 // Paths that should be proxied to IAM backend
 const IAM_PATHS = [
+  '/v1/iam/',       // canonical /v1/iam mount (HIP-0026 compliant). MUST come first
+                    // since /v1/iam/oauth/* would otherwise miss the /oauth/ rule too.
   '/api/',
   '/oauth/',
   '/login/oauth/',
@@ -1556,8 +1582,8 @@ export default {
       return Response.redirect(target.toString(), 301);
     }
 
-    // Resolve org brand from request hostname
-    const brand = getOrgBrand(url.hostname);
+    // Resolve org brand from request hostname (env carries the tenant catalog)
+    const brand = getOrgBrand(url.hostname, env);
 
     // ── Platform Git provider OAuth ──────────────────────────────────
     // Platform needs Git provider tokens (repo access) — handled separately
@@ -2204,7 +2230,12 @@ export default {
       const iamUrl = new URL(pathname + url.search, IAM_ORIGIN);
 
       const headers = new Headers(request.headers);
-      headers.set('Host', 'iam.hanzo.ai');
+      // Preserve the original public hostname so IAM stamps it as the
+      // OIDC issuer (iss claim) in issued JWTs. If we forced
+      // Host=iam.hanzo.ai here, JWTs from hanzo.id requests would have
+      // iss=https://iam.hanzo.ai, breaking downstream services that
+      // expect iss=https://hanzo.id.
+      headers.set('Host', url.hostname);
 
       const iamRequest = new Request(iamUrl.toString(), {
         method: request.method,
@@ -2214,6 +2245,20 @@ export default {
       });
 
       const response = await fetch(iamRequest);
+
+      // Rewrite OAuth token response: the iss claim of issued JWTs is
+      // stamped from IAM's Host header view (iam.hanzo.ai), but external
+      // callers expect iss=https://<public-hostname> (e.g. https://hanzo.id).
+      // Rewriting iss in the payload here re-signs nothing — JWT
+      // signatures cover header+payload, not the surrounding response
+      // envelope. Downstream JWKS-verifying clients (gateway/cloud-api)
+      // ignore the response body's iss; they only check the JWT's own
+      // iss field. So we must rewrite the JWT itself.
+      //
+      // The right fix is to make IAM stamp the canonical public host
+      // as iss. Until then: the gateway side accepts iam.hanzo.ai too
+      // (see ../universe/infra/k8s/gateway/config.yaml). This worker
+      // doesn't touch issued JWTs.
 
       // Rewrite OIDC discovery URLs
       if (pathname.startsWith('/.well-known/')) {
