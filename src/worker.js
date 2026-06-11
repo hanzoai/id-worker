@@ -1900,7 +1900,18 @@ export default {
     if (pathname === '/oauth/token' && request.method === 'POST') {
       const iamUrl = new URL('/api/login/oauth/access_token' + url.search, IAM_ORIGIN);
       const headers = new Headers(request.headers);
-      headers.set('Host', 'iam.hanzo.ai');
+      // Preserve original public hostname so IAM's getOriginFromHost()
+      // stamps iss=https://<public-host> in the JWT it issues. Otherwise
+      // iss=https://iam.hanzo.ai and gateway/cloud-api JWKS validators
+      // reject it as "invalid issuer claim (iss)".
+      headers.set('Host', url.hostname);
+      // Cloudflare Workers silently overrides the Host header on outbound
+      // fetch to match the target URL, so the line above is best-effort and
+      // gets discarded by the runtime. IAM reads X-Forwarded-Host first via
+      // getEffectiveHost() (iam/controllers/util.go), so set that too —
+      // this is the actual signal IAM uses to stamp the `iss` claim and to
+      // resolve originBackend in getOriginFromHost().
+      headers.set('X-Forwarded-Host', url.hostname);
 
       const iamRequest = new Request(iamUrl.toString(), {
         method: 'POST',
@@ -1922,7 +1933,15 @@ export default {
     if (pathname === '/oauth/introspect' && request.method === 'POST') {
       const iamUrl = new URL('/api/login/oauth/introspect' + url.search, IAM_ORIGIN);
       const headers = new Headers(request.headers);
-      headers.set('Host', 'iam.hanzo.ai');
+      // Preserve original public hostname — see /oauth/token comment.
+      headers.set('Host', url.hostname);
+      // Cloudflare Workers silently overrides the Host header on outbound
+      // fetch to match the target URL, so the line above is best-effort and
+      // gets discarded by the runtime. IAM reads X-Forwarded-Host first via
+      // getEffectiveHost() (iam/controllers/util.go), so set that too —
+      // this is the actual signal IAM uses to stamp the `iss` claim and to
+      // resolve originBackend in getOriginFromHost().
+      headers.set('X-Forwarded-Host', url.hostname);
       return fetch(new Request(iamUrl.toString(), {
         method: 'POST', headers, body: request.body, redirect: 'manual',
       }));
@@ -1932,7 +1951,15 @@ export default {
     if (pathname === '/oauth/revoke' && request.method === 'POST') {
       const iamUrl = new URL('/api/login/oauth/revoke' + url.search, IAM_ORIGIN);
       const headers = new Headers(request.headers);
-      headers.set('Host', 'iam.hanzo.ai');
+      // Preserve original public hostname — see /oauth/token comment.
+      headers.set('Host', url.hostname);
+      // Cloudflare Workers silently overrides the Host header on outbound
+      // fetch to match the target URL, so the line above is best-effort and
+      // gets discarded by the runtime. IAM reads X-Forwarded-Host first via
+      // getEffectiveHost() (iam/controllers/util.go), so set that too —
+      // this is the actual signal IAM uses to stamp the `iss` claim and to
+      // resolve originBackend in getOriginFromHost().
+      headers.set('X-Forwarded-Host', url.hostname);
       return fetch(new Request(iamUrl.toString(), {
         method: 'POST', headers, body: request.body, redirect: 'manual',
       }));
@@ -1942,7 +1969,15 @@ export default {
     if (pathname === '/oauth/userinfo') {
       const iamUrl = new URL('/api/userinfo' + url.search, IAM_ORIGIN);
       const headers = new Headers(request.headers);
-      headers.set('Host', 'iam.hanzo.ai');
+      // Preserve original public hostname — see /oauth/token comment.
+      headers.set('Host', url.hostname);
+      // Cloudflare Workers silently overrides the Host header on outbound
+      // fetch to match the target URL, so the line above is best-effort and
+      // gets discarded by the runtime. IAM reads X-Forwarded-Host first via
+      // getEffectiveHost() (iam/controllers/util.go), so set that too —
+      // this is the actual signal IAM uses to stamp the `iss` claim and to
+      // resolve originBackend in getOriginFromHost().
+      headers.set('X-Forwarded-Host', url.hostname);
       return fetch(new Request(iamUrl.toString(), {
         method: request.method, headers, redirect: 'manual',
       }));
@@ -1952,7 +1987,15 @@ export default {
     if (pathname === '/oauth/logout') {
       const iamUrl = new URL('/login/oauth/logout' + url.search, IAM_ORIGIN);
       const headers = new Headers(request.headers);
-      headers.set('Host', 'iam.hanzo.ai');
+      // Preserve original public hostname — see /oauth/token comment.
+      headers.set('Host', url.hostname);
+      // Cloudflare Workers silently overrides the Host header on outbound
+      // fetch to match the target URL, so the line above is best-effort and
+      // gets discarded by the runtime. IAM reads X-Forwarded-Host first via
+      // getEffectiveHost() (iam/controllers/util.go), so set that too —
+      // this is the actual signal IAM uses to stamp the `iss` claim and to
+      // resolve originBackend in getOriginFromHost().
+      headers.set('X-Forwarded-Host', url.hostname);
       return fetch(new Request(iamUrl.toString(), {
         method: request.method, headers, redirect: 'manual',
       }));
@@ -2017,7 +2060,11 @@ export default {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
             'Cookie': cookieHeader,
-            'Host': 'iam.hanzo.ai',
+            // Preserve original public hostname — see /oauth/token comment.
+            'Host': url.hostname,
+            // CF strips Host on outbound fetch — IAM reads X-Forwarded-Host
+            // first via getEffectiveHost() to stamp iss correctly.
+            'X-Forwarded-Host': url.hostname,
           },
           body: JSON.stringify({
             type: 'token',
@@ -2093,7 +2140,15 @@ export default {
       // No code/state — proxy to IAM as-is (non-social callback)
       const iamUrl = new URL(pathname + url.search, IAM_ORIGIN);
       const headers = new Headers(request.headers);
-      headers.set('Host', 'iam.hanzo.ai');
+      // Preserve original public hostname — see /oauth/token comment.
+      headers.set('Host', url.hostname);
+      // Cloudflare Workers silently overrides the Host header on outbound
+      // fetch to match the target URL, so the line above is best-effort and
+      // gets discarded by the runtime. IAM reads X-Forwarded-Host first via
+      // getEffectiveHost() (iam/controllers/util.go), so set that too —
+      // this is the actual signal IAM uses to stamp the `iss` claim and to
+      // resolve originBackend in getOriginFromHost().
+      headers.set('X-Forwarded-Host', url.hostname);
 
       const iamRequest = new Request(iamUrl.toString(), {
         method: request.method,
@@ -2184,7 +2239,15 @@ export default {
         // so it can correctly process the callback when the provider redirects back.
         const iamUrl = new URL(pathname + url.search, IAM_ORIGIN);
         const headers = new Headers(request.headers);
-        headers.set('Host', 'iam.hanzo.ai');
+        // Preserve original public hostname — see /oauth/token comment.
+        headers.set('Host', url.hostname);
+      // Cloudflare Workers silently overrides the Host header on outbound
+      // fetch to match the target URL, so the line above is best-effort and
+      // gets discarded by the runtime. IAM reads X-Forwarded-Host first via
+      // getEffectiveHost() (iam/controllers/util.go), so set that too —
+      // this is the actual signal IAM uses to stamp the `iss` claim and to
+      // resolve originBackend in getOriginFromHost().
+      headers.set('X-Forwarded-Host', url.hostname);
         const iamRequest = new Request(iamUrl.toString(), {
           method: request.method,
           headers: headers,
@@ -2236,6 +2299,13 @@ export default {
       // iss=https://iam.hanzo.ai, breaking downstream services that
       // expect iss=https://hanzo.id.
       headers.set('Host', url.hostname);
+      // Cloudflare Workers silently overrides the Host header on outbound
+      // fetch to match the target URL, so the line above is best-effort and
+      // gets discarded by the runtime. IAM reads X-Forwarded-Host first via
+      // getEffectiveHost() (iam/controllers/util.go), so set that too —
+      // this is the actual signal IAM uses to stamp the `iss` claim and to
+      // resolve originBackend in getOriginFromHost().
+      headers.set('X-Forwarded-Host', url.hostname);
 
       const iamRequest = new Request(iamUrl.toString(), {
         method: request.method,
@@ -2321,11 +2391,16 @@ export default {
       });
     }
 
-    // Serve auth pages
-    if (shouldServeLogin(pathname)) {
+    // Serve auth pages — and the branded landing/portal at `/`.
+    // Without this the root path falls through to the marketing static
+    // (hanzo-id.pages.dev) which is hardcoded to Hanzo branding and leaks
+    // "Hanzo ID - Unified Identity" on lux.id / pars.id / zoo.id.
+    if (pathname === '/' || shouldServeLogin(pathname)) {
       let html;
 
-      if (pathname === '/signup' || pathname.startsWith('/signup/')) {
+      if (pathname === '/') {
+        html = getPortalPage(brand);
+      } else if (pathname === '/signup' || pathname.startsWith('/signup/')) {
         html = getSignupPage(request.url, brand);
       } else if (pathname === '/forget' || pathname.startsWith('/forget/')) {
         html = getForgotPage(request.url, brand);

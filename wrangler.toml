@@ -15,6 +15,32 @@ routes = [
 ]
 
 [vars]
+# IAM backend (consumed via `env.IAM_ORIGIN` with fallback to the module-level
+# constant — see worker.js).
 IAM_ORIGIN = "https://iam.hanzo.ai"
+
+# Default org slug when the hostname has no tenant catalog entry.
+IAM_DEFAULT_ORG = "hanzo"
+
+# Tenant catalog (env-driven, NOT hardcoded in source). Maps request
+# hostnames to `{ orgId, iamUrl?, clientId?, ... }` overrides. Same JSON
+# schema as the Next.js side (`lib/config.ts::TenantConfig`); only `orgId`
+# is consumed by this worker. To rotate tenants, edit this var (or use
+# `wrangler secret put IAM_TENANT_CONFIG_JSON` for non-public catalogs)
+# and redeploy — no source change.
+IAM_TENANT_CONFIG_JSON = """
+{
+  "hanzo.id":       { "orgId": "hanzo" },
+  "lux.id":         { "orgId": "lux" },
+  "id.lux.network": { "orgId": "lux" },
+  "iam.lux.network":{ "orgId": "lux" },
+  "zoo.id":         { "orgId": "zoo" },
+  "id.zoo.network": { "orgId": "zoo" },
+  "id.zoo.ngo":     { "orgId": "zoo" },
+  "pars.id":        { "orgId": "pars" },
+  "id.pars.network":{ "orgId": "pars" }
+}
+"""
+
 # Proxy to the Pages deployment for the marketing site
 MARKETING_ORIGIN = "https://hanzo-id.pages.dev"
