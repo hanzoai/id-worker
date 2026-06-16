@@ -1586,6 +1586,147 @@ function validateRedirectOrigin(redirectUrl, fallback) {
   return fallback;
 }
 
+// ── Cross-app silent SSO ─────────────────────────────────────────────
+//
+// When a user already has a live unified-IAM session (the `iam_session_id`
+// cookie set on the *.id login domain) and an OAuth client sends them to the
+// authorize/login page, we must NOT prompt for a password again. Instead we
+// silently mint an authorization code on their behalf and bounce straight
+// back to the client's redirect_uri — the standard "already authenticated,
+// skip the form" SSO behavior.
+//
+// The IAM backend already supports this: POST /api/login with
+// {type:'code', application, organization, ...} and NO password returns a
+// valid authorization code ("status":"ok","data":"<code>") as long as a valid
+// session cookie is present. (`enableCodeSignin` is true for these apps but
+// `enableAutoSignin` is false, so the *worker* has to drive the silent code
+// request — IAM won't auto-issue it on the authorize GET.)
+//
+// Returns a 302 Response on success, or null when SSO is not applicable
+// (no session / no redirect_uri / prompt=login / any failure) so the caller
+// falls through to rendering the normal password form. This is purely
+// additive: the no-session path is unchanged.
+async function attemptSilentSSO(request, url, env) {
+  // Honor an explicit re-auth request ("use a different account").
+  if (url.searchParams.get('prompt') === 'login') return null;
+
+  // Silent SSO only makes sense for the authorization-code redirect flow:
+  // we need somewhere (redirect_uri) to send the freshly minted code.
+  const redirectUri =
+    url.searchParams.get('redirect_uri') || url.searchParams.get('redirectUri') || '';
+  if (!redirectUri) return null;
+
+  // No session cookie → nothing to be silent about; show the form.
+  const cookieHeader = request.headers.get('Cookie') || '';
+  if (!/(?:^|;\s*)iam_session_id=[^;]+/.test(cookieHeader)) return null;
+
+  const iamOrigin = (env && env.IAM_ORIGIN) || IAM_ORIGIN;
+
+  try {
+    // 1) Confirm the session is actually valid (not just a stale cookie).
+    const acctRes = await fetch(`${iamOrigin}/api/get-account`, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json', 'Cookie': cookieHeader, 'Host': 'iam.hanzo.ai' },
+      redirect: 'manual',
+    });
+    const acct = await acctRes.json().catch(() => ({}));
+    if (!acct || acct.status !== 'ok') return null;
+
+    // 2) Resolve the target application + organization for this client_id.
+    const clientId =
+      url.searchParams.get('client_id') || url.searchParams.get('clientId') || '';
+    const responseType =
+      url.searchParams.get('response_type') || url.searchParams.get('responseType') || 'code';
+    const scope = url.searchParams.get('scope') || 'openid profile email';
+    const state = url.searchParams.get('state') || '';
+    const nonce = url.searchParams.get('nonce') || '';
+    const codeChallenge = url.searchParams.get('code_challenge') || '';
+    const codeChallengeMethod = url.searchParams.get('code_challenge_method') || '';
+
+    // Default to the hostname-derived brand console app, then override from
+    // the static client→app map, then from IAM's authoritative get-app-login.
+    const brand = getOrgBrand(url.hostname, env);
+    let application = `${brand.orgId}-console`;
+    let organization = brand.orgId;
+    if (clientId && CLIENT_APP_MAP[clientId]) {
+      application = CLIENT_APP_MAP[clientId].application;
+      organization = CLIENT_APP_MAP[clientId].organization;
+    }
+    if (clientId) {
+      try {
+        const lp = new URLSearchParams({
+          clientId,
+          responseType,
+          redirectUri,
+          scope,
+          state,
+        });
+        const alRes = await fetch(`${iamOrigin}/api/get-app-login?${lp.toString()}`, {
+          headers: { 'Accept': 'application/json', 'Host': 'iam.hanzo.ai' },
+        });
+        const al = await alRes.json().catch(() => null);
+        if (al && al.status === 'ok' && al.data) {
+          if (al.data.name) application = al.data.name;
+          if (al.data.organization) organization = al.data.organization;
+        }
+      } catch { /* keep the map/brand fallback */ }
+    }
+
+    // 3) Silently mint an authorization code (no password) using the session.
+    const qp = new URLSearchParams({
+      clientId: clientId || application,
+      responseType,
+      redirectUri,
+      scope,
+      state,
+      type: 'code',
+    });
+    if (nonce) qp.set('nonce', nonce);
+    if (codeChallenge) qp.set('code_challenge', codeChallenge);
+    if (codeChallengeMethod) qp.set('code_challenge_method', codeChallengeMethod);
+
+    const body = {
+      type: 'code',
+      application,
+      organization,
+      clientId: clientId || application,
+      responseType,
+      redirectUri,
+      scope,
+      state,
+    };
+    if (nonce) body.nonce = nonce;
+    if (codeChallenge) { body.codeChallenge = codeChallenge; body.codeChallengeMethod = codeChallengeMethod; }
+
+    const loginRes = await fetch(`${iamOrigin}/api/login?${qp.toString()}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Cookie': cookieHeader,
+        'Host': 'iam.hanzo.ai',
+      },
+      body: JSON.stringify(body),
+      redirect: 'manual',
+    });
+    const login = await loginRes.json().catch(() => ({}));
+    if (!login || login.status !== 'ok' || !login.data) return null;
+
+    // 4) Bounce back to the client with ?code=&state= — no password prompt.
+    const sep = redirectUri.indexOf('?') >= 0 ? '&' : '?';
+    const target =
+      redirectUri + sep + 'code=' + encodeURIComponent(login.data) +
+      '&state=' + encodeURIComponent(state);
+    return new Response(null, {
+      status: 302,
+      headers: { 'Location': target, 'Cache-Control': 'no-store' },
+    });
+  } catch {
+    // Any failure → fall through to the normal login form.
+    return null;
+  }
+}
+
 // ── Worker fetch handler ─────────────────────────────────────────────
 // Alias domains that should 301 redirect to their canonical .id domain
 // id.lux.network, id.zoo.network, id.pars.network are now served directly (not redirected)
@@ -1935,6 +2076,10 @@ export default {
 
     // GET /oauth/authorize → serve login page (same as /login/oauth/authorize)
     if (pathname === '/oauth/authorize') {
+      // Cross-app SSO: if the user already has a live IAM session, mint a code
+      // and redirect back to the client instead of showing the password form.
+      const sso = await attemptSilentSSO(request, url, env);
+      if (sso) return sso;
       return new Response(getLoginPage(request.url, brand), {
         headers: {
           'content-type': 'text/html;charset=UTF-8',
@@ -2168,6 +2313,14 @@ export default {
     // param, construct the social provider OAuth URL and redirect directly.
     // Otherwise serve our custom login page. New clients use /oauth/authorize.
     if (pathname === '/login/oauth/authorize') {
+      // Cross-app SSO: a logged-in IAM session skips the password form and
+      // bounces straight back to the client with a fresh authorization code.
+      // Only applies to the plain authorize (no explicit social `provider`,
+      // since that is an active provider-button click, not a silent resume).
+      if (!url.searchParams.has('provider')) {
+        const sso = await attemptSilentSSO(request, url, env);
+        if (sso) return sso;
+      }
       if (url.searchParams.has('provider')) {
         const provider = url.searchParams.get('provider');
         const clientId = url.searchParams.get('client_id');
@@ -2384,6 +2537,11 @@ export default {
         const forceLogin = url.searchParams.get('prompt') === 'login';
 
         if (hasOAuthParams || forceLogin) {
+          // Cross-app SSO: skip the password form when an IAM session exists
+          // (attemptSilentSSO itself no-ops on prompt=login and when there is
+          // no redirect_uri to bounce a code back to).
+          const sso = await attemptSilentSSO(request, url, env);
+          if (sso) return sso;
           html = getLoginPage(request.url, brand);
         } else {
           html = getPortalPage(brand);
