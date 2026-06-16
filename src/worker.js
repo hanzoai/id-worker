@@ -16,6 +16,11 @@ const CLIENT_APP_MAP = {
   'hanzo-platform-client-id': { application: 'hanzo-platform', organization: 'hanzo' },
   'hanzo-app-client-id': { application: 'hanzo-app', organization: 'hanzo' },
   'hanzo-app': { application: 'hanzo-app', organization: 'hanzo' },
+  // Brand console apps (clientId == name) used as the default per-brand app.
+  'hanzo-console': { application: 'hanzo-console', organization: 'hanzo' },
+  'lux-console': { application: 'lux-console', organization: 'lux' },
+  'zoo-console': { application: 'zoo-console', organization: 'zoo' },
+  'pars-console': { application: 'pars-console', organization: 'pars' },
   'hanzo-console-client-id': { application: 'hanzo-console', organization: 'hanzo' },
   'hanzo-cloud-client-id': { application: 'hanzo-cloud', organization: 'hanzo' },
   'kms-client': { application: 'hanzo-kms', organization: 'hanzo' },
@@ -170,10 +175,26 @@ function getDomainOrgMap(env) {
   return cachedDomainOrgMap;
 }
 
+// Built-in hostname -> org fallback for the canonical *.id login domains.
+// `IAM_TENANT_CONFIG_JSON` (env) still takes precedence; this just guarantees
+// correct branding/org for the well-known brand domains even when that env
+// var is unset, so signup/login resolve the right organization.
+const DEFAULT_HOST_ORG = {
+  'hanzo.id': 'hanzo',
+  'lux.id': 'lux',
+  'id.lux.network': 'lux',
+  'iam.lux.network': 'lux',
+  'zoolabs.id': 'zoo',
+  'zoo.id': 'zoo',
+  'id.zoo.network': 'zoo',
+  'pars.id': 'pars',
+};
+
 function getOrgBrand(hostname, env) {
   const map = getDomainOrgMap(env);
   const orgKey =
     map[hostname]
+    || DEFAULT_HOST_ORG[hostname]
     || (env && env.IAM_DEFAULT_ORG)
     || 'hanzo';
   return ORG_BRANDS[orgKey] || ORG_BRANDS.hanzo;
@@ -744,7 +765,12 @@ function getLoginPage(url, brand) {
         return oauthParams.get(snakeCase) || oauthParams.get(camelCase) || fallback || '';
       }
 
-      var clientId = pickAuthParam('client_id', 'clientId', '${clientId}') || 'hanzo-app-client-id';
+      // Worker resolves the org from the request hostname (server-side) so the
+      // brand console app is the default when no client_id is supplied.
+      var brandOrg = '${brand.orgId}';
+      var brandApp = brandOrg + '-console';
+
+      var clientId = pickAuthParam('client_id', 'clientId', '${clientId}') || brandApp;
       var redirectUri = pickAuthParam('redirect_uri', 'redirectUri', '${redirectUri}');
       var state = pickAuthParam('state', 'state', '${state}');
       var scope = pickAuthParam('scope', 'scope', '${scope}') || 'openid profile email';
@@ -759,6 +785,10 @@ function getLoginPage(url, brand) {
         // Hanzo org — match by client_id (both legacy and current formats)
         'hanzo-app-client-id': { app: 'hanzo-app', org: 'hanzo' },
         'hanzo-app': { app: 'hanzo-app', org: 'hanzo' },
+        'hanzo-console': { app: 'hanzo-console', org: 'hanzo' },
+        'lux-console': { app: 'lux-console', org: 'lux' },
+        'zoo-console': { app: 'zoo-console', org: 'zoo' },
+        'pars-console': { app: 'pars-console', org: 'pars' },
         'hanzo-console-client-id': { app: 'hanzo-console', org: 'hanzo' },
         'hanzo-cloud-client-id': { app: 'hanzo-cloud', org: 'hanzo' },
         'hanzo-commerce-client-id': { app: 'hanzo-commerce', org: 'hanzo' },
@@ -792,9 +822,9 @@ function getLoginPage(url, brand) {
         'pars-app-client-id': { app: 'pars-app', org: 'pars' },
         'pars-mpc': { app: 'pars-mpc', org: 'pars' },
       };
-      var fallback = fallbackAppMap[clientId] || {};
-      var loginApp = fallback.app || '';
-      var loginOrganization = fallback.org || '';
+      var fallback = fallbackAppMap[clientId] || { app: brandApp, org: brandOrg };
+      var loginApp = fallback.app || brandApp;
+      var loginOrganization = fallback.org || brandOrg;
 
       function buildApiLoginParams() {
         var params = new URLSearchParams({
@@ -988,12 +1018,18 @@ function getLoginPage(url, brand) {
         btn.classList.add('loading');
         btn.textContent = 'Signing in...';
 
+        // The IAM has permanently disabled the implicit grant
+        // (type:'token'/'id_token'). Use the authorization-code flow when a
+        // client redirect_uri is present (the client exchanges the code for
+        // tokens), and the session login (type:'login') for the bare portal
+        // sign-in (the IAM sets the iam_session_id cookie).
+        var loginType = redirectUri ? 'code' : 'login';
         loginConfigPromise.then(function() {
           return fetch(origin + '/api/login?' + buildApiLoginParams().toString(), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            type: 'token',
+            type: loginType,
             username: email,
             password: password,
             organization: loginOrganization,
@@ -1010,13 +1046,13 @@ function getLoginPage(url, brand) {
           btn.textContent = 'Sign in';
           if (data.status === 'ok' && data.data) {
             if (redirectUri) {
+              // Authorization-code flow: redirect back with the code.
               var sep = redirectUri.indexOf('?') >= 0 ? '&' : '?';
               window.location.href = redirectUri + sep
-                + 'access_token=' + encodeURIComponent(data.data)
-                + '&refresh_token=' + encodeURIComponent(data.data2 || '')
-                + '&state=' + encodeURIComponent(state)
-                + '&provider=hanzo&status=200';
+                + 'code=' + encodeURIComponent(data.data)
+                + '&state=' + encodeURIComponent(state);
             } else {
+              // Session login succeeded — go to the brand portal / apps page.
               window.location.href = '/login';
             }
           } else {
@@ -1102,32 +1138,45 @@ function getSignupPage(url, brand) {
         return oauthParams.get(snakeCase) || oauthParams.get(camelCase) || fallback || '';
       }
 
-      var clientId = pickParam('client_id', 'clientId', '') || 'hanzo-app-client-id';
+      // The worker resolves the org from the request hostname (server-side),
+      // so signup always has a valid organization even when no client_id is
+      // supplied or IAM's get-app-login can't resolve the placeholder one.
+      var brandOrg = '${brand.orgId}';
+      var brandApp = brandOrg + '-console';
+
+      var clientId = pickParam('client_id', 'clientId', '') || (brandApp);
       var redirectUri = pickParam('redirect_uri', 'redirectUri', '${redirectUri}');
       var state = pickParam('state', 'state', '');
       var scope = pickParam('scope', 'scope', '') || 'openid profile email';
       var responseType = pickParam('response_type', 'responseType', 'code') || 'code';
 
-      var fallbackAppNameMap = {
-        'hanzo-app-client-id': 'hanzo-app',
-        'hanzo-app': 'hanzo-app',
-        'hanzo-console-client-id': 'hanzo-console',
-        'hanzo-cloud-client-id': 'hanzo-cloud',
-        'hanzo-platform-client-id': 'hanzo-platform',
-        'kms-client': 'hanzo-kms',
-        'hanzo-kms-client-id': 'hanzo-kms',
-        'chat-app': 'hanzo-chat',
-        'hanzo-chat-client-id': 'hanzo-chat',
-        'hanzo-team-client-id': 'hanzo-team',
-        'hanzobot-client-id': 'hanzo-bot',
-        'hanzo-web3': 'hanzo-web3',
-        'lux-web3': 'lux-web3',
-        'lux-app-client-id': 'lux-app',
-        'zoo-app-client-id': 'zoo-app',
-        'pars-app-client-id': 'pars-app',
+      // client_id -> { app, org } fallback (used when get-app-login is unavailable).
+      var fallbackAppMap = {
+        'hanzo-app-client-id': { app: 'hanzo-app', org: 'hanzo' },
+        'hanzo-app': { app: 'hanzo-app', org: 'hanzo' },
+        'hanzo-console': { app: 'hanzo-console', org: 'hanzo' },
+        'hanzo-console-client-id': { app: 'hanzo-console', org: 'hanzo' },
+        'hanzo-cloud-client-id': { app: 'hanzo-cloud', org: 'hanzo' },
+        'hanzo-platform-client-id': { app: 'hanzo-platform', org: 'hanzo' },
+        'kms-client': { app: 'hanzo-kms', org: 'hanzo' },
+        'hanzo-kms-client-id': { app: 'hanzo-kms', org: 'hanzo' },
+        'chat-app': { app: 'hanzo-chat', org: 'hanzo' },
+        'hanzo-chat-client-id': { app: 'hanzo-chat', org: 'hanzo' },
+        'hanzo-team-client-id': { app: 'hanzo-team', org: 'hanzo' },
+        'hanzobot-client-id': { app: 'hanzo-bot', org: 'hanzo' },
+        'hanzo-web3': { app: 'hanzo-web3', org: 'hanzo' },
+        'lux-console': { app: 'lux-console', org: 'lux' },
+        'lux-web3': { app: 'lux-web3', org: 'lux' },
+        'lux-app-client-id': { app: 'lux-app', org: 'lux' },
+        'zoo-console': { app: 'zoo-console', org: 'zoo' },
+        'zoo-app-client-id': { app: 'zoo-app', org: 'zoo' },
+        'pars-console': { app: 'pars-console', org: 'pars' },
+        'pars-app-client-id': { app: 'pars-app', org: 'pars' },
       };
-      var signupApp = fallbackAppNameMap[clientId] || '';
-      var signupOrg = '';
+      // Authoritative default: the brand console app + the hostname-derived org.
+      var fallback = fallbackAppMap[clientId] || { app: brandApp, org: brandOrg };
+      var signupApp = fallback.app || brandApp;
+      var signupOrg = fallback.org || brandOrg;
 
       function buildApiParams() {
         return new URLSearchParams({
