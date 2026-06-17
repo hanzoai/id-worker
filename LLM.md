@@ -1,4 +1,4 @@
-# LLM.md - Hanzo Hanzo.Id Worker
+# Hanzo Hanzo.Id Worker
 
 ## Overview
 Cloudflare Worker for hanzo.id - routes auth to IAM, serves marketing site
