@@ -1775,6 +1775,22 @@ export default {
     // Resolve org brand from request hostname (env carries the tenant catalog)
     const brand = getOrgBrand(url.hostname, env);
 
+    // ── Social login (provider=X) → native casdoor on the IAM backend ─
+    // Social sign-in (Google/GitHub/Apple/Web3) needs casdoor's SPA to run,
+    // which loads /assets/* — those resolve ONLY on the IAM backend (the worker
+    // serves the marketing Pages fallback for /assets/, so the SPA goes blank
+    // here). When an authorize request carries a `provider`, route it to
+    // iam.hanzo.ai where casdoor runs natively: it redirects to the provider,
+    // completes the round-trip at https://iam.hanzo.ai/callback, then redirects
+    // back to the requesting app. Password login (no provider) keeps the worker UI.
+    if ((pathname === '/login/oauth/authorize' || pathname === '/oauth/authorize')
+        && url.searchParams.get('provider')) {
+      const t = new URL(url);
+      t.hostname = 'iam.hanzo.ai';
+      t.pathname = '/login/oauth/authorize';
+      return Response.redirect(t.toString(), 302);
+    }
+
     // ── OAuth authorize canonicalization ─────────────────────────────
     // Apps (hanzo.app, billing, account, MPC, platform) call
     // hanzo.id/oauth/authorize. Casdoor serves a STALE blank SPA at that path
