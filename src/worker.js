@@ -1775,6 +1775,18 @@ export default {
     // Resolve org brand from request hostname (env carries the tenant catalog)
     const brand = getOrgBrand(url.hostname, env);
 
+    // ── OAuth authorize canonicalization ─────────────────────────────
+    // Apps (hanzo.app, billing, account, MPC, platform) call
+    // hanzo.id/oauth/authorize. Casdoor serves a STALE blank SPA at that path
+    // (dead /assets hashes → blank login). The working OAuth authorize is the
+    // canonical /v1/iam/oauth/authorize (→ /login/oauth/authorize). Map the
+    // legacy path to the canonical one, preserving the query string.
+    if (pathname === '/oauth/authorize') {
+      const target = new URL(url);
+      target.pathname = '/v1/iam/oauth/authorize';
+      return Response.redirect(target.toString(), 302);
+    }
+
     // ── Platform Git provider OAuth ──────────────────────────────────
     // Platform needs Git provider tokens (repo access) — handled separately
     // from IAM social login. Uses the same GitHub OAuth App but with
