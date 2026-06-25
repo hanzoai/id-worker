@@ -9,8 +9,8 @@ const IAM_ORIGIN = 'https://iam.hanzo.ai';
 const MARKETING_ORIGIN = 'https://hanzo-id.pages.dev';
 
 // Client ID → application/organization map.
-// IAM's /api/get-app-login is broken for our version, so we maintain this
-// as a fallback for social login callback processing.
+// Used as a fallback for social-login callback processing when the live
+// /v1/iam/get-app-login lookup is unavailable (network/transient).
 const CLIENT_APP_MAP = {
   // Hanzo org
   'hanzo-platform-client-id': { application: 'hanzo-platform', organization: 'hanzo' },
@@ -815,7 +815,7 @@ function getLoginPage(url, brand) {
       }
 
       function resolveLoginConfigFromIAM() {
-        return fetch(origin + '/api/get-app-login?' + buildApiLoginParams().toString(), {
+        return fetch(origin + '/v1/iam/get-app-login?' + buildApiLoginParams().toString(), {
           method: 'GET',
           credentials: 'include',
         })
@@ -852,7 +852,7 @@ function getLoginPage(url, brand) {
         if (codeChallengeMethod) params.set('code_challenge_method', codeChallengeMethod);
         if (codeChallenge) params.set('code_challenge', codeChallenge);
 
-        window.location.href = origin + '/oauth/authorize?' + params.toString();
+        window.location.href = origin + '/v1/iam/oauth/authorize?' + params.toString();
       }
 
       function showComingSoon(e, name) {
@@ -908,7 +908,7 @@ function getLoginPage(url, brand) {
           var params = buildApiLoginParams();
           var web3State = state || loginOrganization || 'web3-login';
           params.set('state', web3State);
-          var res = await fetch(origin + '/api/login?' + params.toString(), {
+          var res = await fetch(origin + '/v1/iam/login?' + params.toString(), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -989,7 +989,7 @@ function getLoginPage(url, brand) {
         btn.textContent = 'Signing in...';
 
         loginConfigPromise.then(function() {
-          return fetch(origin + '/api/login?' + buildApiLoginParams().toString(), {
+          return fetch(origin + '/v1/iam/login?' + buildApiLoginParams().toString(), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1141,7 +1141,7 @@ function getSignupPage(url, brand) {
       }
 
       // Resolve app/org from IAM dynamically
-      var configPromise = fetch(origin + '/api/get-app-login?' + buildApiParams().toString(), {
+      var configPromise = fetch(origin + '/v1/iam/get-app-login?' + buildApiParams().toString(), {
         method: 'GET',
         credentials: 'include',
       })
@@ -1163,7 +1163,7 @@ function getSignupPage(url, brand) {
           state: state,
           provider: provider,
         });
-        window.location.href = origin + '/oauth/authorize?' + params.toString();
+        window.location.href = origin + '/v1/iam/oauth/authorize?' + params.toString();
       }
 
       document.getElementById('btn-google').addEventListener('click', function(e) {
@@ -1211,7 +1211,7 @@ function getSignupPage(url, brand) {
           var web3State = state || signupOrg || 'web3-signup';
           params.set('state', web3State);
 
-          var res = await fetch(origin + '/api/login?' + params.toString(), {
+          var res = await fetch(origin + '/v1/iam/login?' + params.toString(), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1305,7 +1305,7 @@ function getSignupPage(url, brand) {
         await configPromise;
         var username = contactMode === 'email' ? email.split('@')[0].replace(/[^a-zA-Z0-9_]/g, '_') : phone.replace(/[^0-9]/g, '').slice(-8);
 
-        fetch(origin + '/api/signup', {
+        fetch(origin + '/v1/iam/signup', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1405,7 +1405,7 @@ function getForgotPage(url, brand) {
           scope: 'openid profile email',
           state: '',
         });
-        return fetch(origin + '/api/get-app-login?' + p.toString(), {
+        return fetch(origin + '/v1/iam/get-app-login?' + p.toString(), {
           method: 'GET',
           credentials: 'include',
         })
@@ -1440,7 +1440,7 @@ function getForgotPage(url, brand) {
           };
           if (forgotAppId) payload.applicationId = forgotAppId;
 
-          return fetch(origin + '/api/send-verification-code', {
+          return fetch(origin + '/v1/iam/send-verification-code', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload),
@@ -1764,7 +1764,7 @@ export default {
         tokenPayload.client_secret = clientSecret;
       }
 
-      const tokenRes = await fetch(`${IAM_ORIGIN}/api/login/oauth/access_token`, {
+      const tokenRes = await fetch(`${IAM_ORIGIN}/v1/iam/oauth/token`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1846,7 +1846,7 @@ export default {
         tokenPayload.client_secret = clientSecret;
       }
 
-      const tokenRes = await fetch(`${IAM_ORIGIN}/api/login/oauth/access_token`, {
+      const tokenRes = await fetch(`${IAM_ORIGIN}/v1/iam/oauth/token`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -1896,11 +1896,22 @@ export default {
       });
     }
 
-    // POST /oauth/token → proxy to IAM's /api/login/oauth/access_token
+    // POST /oauth/token → proxy to IAM's canonical /v1/iam/oauth/token
     if (pathname === '/oauth/token' && request.method === 'POST') {
-      const iamUrl = new URL('/api/login/oauth/access_token' + url.search, IAM_ORIGIN);
+      const iamUrl = new URL('/v1/iam/oauth/token' + url.search, IAM_ORIGIN);
       const headers = new Headers(request.headers);
-      headers.set('Host', 'iam.hanzo.ai');
+      // Preserve original public hostname so IAM's getOriginFromHost()
+      // stamps iss=https://<public-host> in the JWT it issues. Otherwise
+      // iss=https://iam.hanzo.ai and gateway/cloud-api JWKS validators
+      // reject it as "invalid issuer claim (iss)".
+      headers.set('Host', url.hostname);
+      // Cloudflare Workers silently overrides the Host header on outbound
+      // fetch to match the target URL, so the line above is best-effort and
+      // gets discarded by the runtime. IAM reads X-Forwarded-Host first via
+      // getEffectiveHost() (iam/controllers/util.go), so set that too —
+      // this is the actual signal IAM uses to stamp the `iss` claim and to
+      // resolve originBackend in getOriginFromHost().
+      headers.set('X-Forwarded-Host', url.hostname);
 
       const iamRequest = new Request(iamUrl.toString(), {
         method: 'POST',
@@ -1918,41 +1929,73 @@ export default {
       return newResponse;
     }
 
-    // POST /oauth/introspect → proxy to IAM's /api/login/oauth/introspect (RFC 7662)
+    // POST /oauth/introspect → proxy to IAM's canonical /v1/iam/oauth/introspect (RFC 7662)
     if (pathname === '/oauth/introspect' && request.method === 'POST') {
-      const iamUrl = new URL('/api/login/oauth/introspect' + url.search, IAM_ORIGIN);
+      const iamUrl = new URL('/v1/iam/oauth/introspect' + url.search, IAM_ORIGIN);
       const headers = new Headers(request.headers);
-      headers.set('Host', 'iam.hanzo.ai');
+      // Preserve original public hostname — see /oauth/token comment.
+      headers.set('Host', url.hostname);
+      // Cloudflare Workers silently overrides the Host header on outbound
+      // fetch to match the target URL, so the line above is best-effort and
+      // gets discarded by the runtime. IAM reads X-Forwarded-Host first via
+      // getEffectiveHost() (iam/controllers/util.go), so set that too —
+      // this is the actual signal IAM uses to stamp the `iss` claim and to
+      // resolve originBackend in getOriginFromHost().
+      headers.set('X-Forwarded-Host', url.hostname);
       return fetch(new Request(iamUrl.toString(), {
         method: 'POST', headers, body: request.body, redirect: 'manual',
       }));
     }
 
-    // POST /oauth/revoke → proxy to IAM's /api/login/oauth/revoke (RFC 7009)
+    // POST /oauth/revoke → proxy to IAM's canonical /v1/iam/oauth/revoke (RFC 7009)
     if (pathname === '/oauth/revoke' && request.method === 'POST') {
-      const iamUrl = new URL('/api/login/oauth/revoke' + url.search, IAM_ORIGIN);
+      const iamUrl = new URL('/v1/iam/oauth/revoke' + url.search, IAM_ORIGIN);
       const headers = new Headers(request.headers);
-      headers.set('Host', 'iam.hanzo.ai');
+      // Preserve original public hostname — see /oauth/token comment.
+      headers.set('Host', url.hostname);
+      // Cloudflare Workers silently overrides the Host header on outbound
+      // fetch to match the target URL, so the line above is best-effort and
+      // gets discarded by the runtime. IAM reads X-Forwarded-Host first via
+      // getEffectiveHost() (iam/controllers/util.go), so set that too —
+      // this is the actual signal IAM uses to stamp the `iss` claim and to
+      // resolve originBackend in getOriginFromHost().
+      headers.set('X-Forwarded-Host', url.hostname);
       return fetch(new Request(iamUrl.toString(), {
         method: 'POST', headers, body: request.body, redirect: 'manual',
       }));
     }
 
-    // GET /oauth/userinfo → proxy to IAM's /api/userinfo (OIDC Core)
+    // GET /oauth/userinfo → proxy to IAM's canonical /v1/iam/oauth/userinfo (OIDC Core)
     if (pathname === '/oauth/userinfo') {
-      const iamUrl = new URL('/api/userinfo' + url.search, IAM_ORIGIN);
+      const iamUrl = new URL('/v1/iam/oauth/userinfo' + url.search, IAM_ORIGIN);
       const headers = new Headers(request.headers);
-      headers.set('Host', 'iam.hanzo.ai');
+      // Preserve original public hostname — see /oauth/token comment.
+      headers.set('Host', url.hostname);
+      // Cloudflare Workers silently overrides the Host header on outbound
+      // fetch to match the target URL, so the line above is best-effort and
+      // gets discarded by the runtime. IAM reads X-Forwarded-Host first via
+      // getEffectiveHost() (iam/controllers/util.go), so set that too —
+      // this is the actual signal IAM uses to stamp the `iss` claim and to
+      // resolve originBackend in getOriginFromHost().
+      headers.set('X-Forwarded-Host', url.hostname);
       return fetch(new Request(iamUrl.toString(), {
         method: request.method, headers, redirect: 'manual',
       }));
     }
 
-    // GET /oauth/logout → proxy to IAM's /login/oauth/logout (OIDC)
+    // GET /oauth/logout → proxy to IAM's canonical /v1/iam/oauth/logout (OIDC)
     if (pathname === '/oauth/logout') {
-      const iamUrl = new URL('/login/oauth/logout' + url.search, IAM_ORIGIN);
+      const iamUrl = new URL('/v1/iam/oauth/logout' + url.search, IAM_ORIGIN);
       const headers = new Headers(request.headers);
-      headers.set('Host', 'iam.hanzo.ai');
+      // Preserve original public hostname — see /oauth/token comment.
+      headers.set('Host', url.hostname);
+      // Cloudflare Workers silently overrides the Host header on outbound
+      // fetch to match the target URL, so the line above is best-effort and
+      // gets discarded by the runtime. IAM reads X-Forwarded-Host first via
+      // getEffectiveHost() (iam/controllers/util.go), so set that too —
+      // this is the actual signal IAM uses to stamp the `iss` claim and to
+      // resolve originBackend in getOriginFromHost().
+      headers.set('X-Forwarded-Host', url.hostname);
       return fetch(new Request(iamUrl.toString(), {
         method: request.method, headers, redirect: 'manual',
       }));
@@ -2011,13 +2054,17 @@ export default {
         // IAM-encoded state from GitHub. The encoded state was only for context extraction.
         // We use type:'token' (implicit) because our IAM version has a bug where
         // type:'code' maps to an empty grant_type and fails the grant_type check.
-        const loginRes = await fetch(`${IAM_ORIGIN}/api/login`, {
+        const loginRes = await fetch(`${IAM_ORIGIN}/v1/iam/login`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Accept': 'application/json',
             'Cookie': cookieHeader,
-            'Host': 'iam.hanzo.ai',
+            // Preserve original public hostname — see /oauth/token comment.
+            'Host': url.hostname,
+            // CF strips Host on outbound fetch — IAM reads X-Forwarded-Host
+            // first via getEffectiveHost() to stamp iss correctly.
+            'X-Forwarded-Host': url.hostname,
           },
           body: JSON.stringify({
             type: 'token',
@@ -2093,7 +2140,15 @@ export default {
       // No code/state — proxy to IAM as-is (non-social callback)
       const iamUrl = new URL(pathname + url.search, IAM_ORIGIN);
       const headers = new Headers(request.headers);
-      headers.set('Host', 'iam.hanzo.ai');
+      // Preserve original public hostname — see /oauth/token comment.
+      headers.set('Host', url.hostname);
+      // Cloudflare Workers silently overrides the Host header on outbound
+      // fetch to match the target URL, so the line above is best-effort and
+      // gets discarded by the runtime. IAM reads X-Forwarded-Host first via
+      // getEffectiveHost() (iam/controllers/util.go), so set that too —
+      // this is the actual signal IAM uses to stamp the `iss` claim and to
+      // resolve originBackend in getOriginFromHost().
+      headers.set('X-Forwarded-Host', url.hostname);
 
       const iamRequest = new Request(iamUrl.toString(), {
         method: request.method,
@@ -2115,10 +2170,13 @@ export default {
       return new Response(response.body, response);
     }
 
-    // /login/oauth/authorize (legacy backward compat) — if it has a provider
-    // param, construct the social provider OAuth URL and redirect directly.
-    // Otherwise serve our custom login page. New clients use /oauth/authorize.
-    if (pathname === '/login/oauth/authorize') {
+    // Provider-aware OAuth authorize. The branded social buttons emit the
+    // canonical /v1/iam/oauth/authorize?...&provider=<name>; the legacy
+    // /login/oauth/authorize alias is still matched for back-compat callers.
+    // With a provider param we resolve app/org, stash the OAuth context in a
+    // cookie for the server-side /callback handler, and proxy to IAM's
+    // canonical authorize. Without one we serve the branded login page.
+    if (pathname === '/v1/iam/oauth/authorize' || pathname === '/login/oauth/authorize') {
       if (url.searchParams.has('provider')) {
         const provider = url.searchParams.get('provider');
         const clientId = url.searchParams.get('client_id');
@@ -2136,7 +2194,7 @@ export default {
               scope: url.searchParams.get('scope') || 'openid profile email',
               state: url.searchParams.get('state') || '',
             });
-            const appLoginRes = await fetch(`${IAM_ORIGIN}/api/get-app-login?${loginParams.toString()}`);
+            const appLoginRes = await fetch(`${IAM_ORIGIN}/v1/iam/get-app-login?${loginParams.toString()}`);
             const appLoginData = await appLoginRes.json();
             if (appLoginData && appLoginData.status === 'ok' && appLoginData.data) {
               appName = appLoginData.data.name || '';
@@ -2157,7 +2215,7 @@ export default {
         let providerClientId = '';
         let providerType = '';
         try {
-          const provRes = await fetch(`${IAM_ORIGIN}/api/get-provider?id=${encodeURIComponent(providerOwner)}/${encodeURIComponent(provider)}`);
+          const provRes = await fetch(`${IAM_ORIGIN}/v1/iam/get-provider?id=${encodeURIComponent(providerOwner)}/${encodeURIComponent(provider)}`);
           const provData = await provRes.json();
           if (provData.data) {
             providerClientId = provData.data.clientId || '';
@@ -2179,12 +2237,21 @@ export default {
         });
         const oauthContextCookie = `_oauth_ctx=${encodeURIComponent(btoa(oauthContext))}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=600`;
 
-        // Proxy all social provider logins (GitHub, Google, etc.) to IAM.
-        // IAM (IAM) manages the full OAuth flow with its own state tracking,
-        // so it can correctly process the callback when the provider redirects back.
-        const iamUrl = new URL(pathname + url.search, IAM_ORIGIN);
+        // Proxy all social provider logins (GitHub, Google, etc.) to IAM's
+        // canonical authorize endpoint. IAM manages the full OAuth flow with
+        // its own state tracking, so it can correctly process the callback
+        // when the provider redirects back.
+        const iamUrl = new URL('/v1/iam/oauth/authorize' + url.search, IAM_ORIGIN);
         const headers = new Headers(request.headers);
-        headers.set('Host', 'iam.hanzo.ai');
+        // Preserve original public hostname — see /oauth/token comment.
+        headers.set('Host', url.hostname);
+      // Cloudflare Workers silently overrides the Host header on outbound
+      // fetch to match the target URL, so the line above is best-effort and
+      // gets discarded by the runtime. IAM reads X-Forwarded-Host first via
+      // getEffectiveHost() (iam/controllers/util.go), so set that too —
+      // this is the actual signal IAM uses to stamp the `iss` claim and to
+      // resolve originBackend in getOriginFromHost().
+      headers.set('X-Forwarded-Host', url.hostname);
         const iamRequest = new Request(iamUrl.toString(), {
           method: request.method,
           headers: headers,
@@ -2236,6 +2303,13 @@ export default {
       // iss=https://iam.hanzo.ai, breaking downstream services that
       // expect iss=https://hanzo.id.
       headers.set('Host', url.hostname);
+      // Cloudflare Workers silently overrides the Host header on outbound
+      // fetch to match the target URL, so the line above is best-effort and
+      // gets discarded by the runtime. IAM reads X-Forwarded-Host first via
+      // getEffectiveHost() (iam/controllers/util.go), so set that too —
+      // this is the actual signal IAM uses to stamp the `iss` claim and to
+      // resolve originBackend in getOriginFromHost().
+      headers.set('X-Forwarded-Host', url.hostname);
 
       const iamRequest = new Request(iamUrl.toString(), {
         method: request.method,
@@ -2301,7 +2375,7 @@ export default {
 
     // Logout — clear session and redirect to login
     if (pathname === '/logout') {
-      const logoutUrl = new URL('/api/logout', IAM_ORIGIN);
+      const logoutUrl = new URL('/v1/iam/logout', IAM_ORIGIN);
       logoutUrl.searchParams.set('id_token_hint', url.searchParams.get('id_token_hint') || '');
       logoutUrl.searchParams.set('post_logout_redirect_uri', `https://hanzo.id/login?prompt=login`);
       logoutUrl.searchParams.set('state', url.searchParams.get('state') || '');
@@ -2321,11 +2395,16 @@ export default {
       });
     }
 
-    // Serve auth pages
-    if (shouldServeLogin(pathname)) {
+    // Serve auth pages — and the branded landing/portal at `/`.
+    // Without this the root path falls through to the marketing static
+    // (hanzo-id.pages.dev) which is hardcoded to Hanzo branding and leaks
+    // "Hanzo ID - Unified Identity" on lux.id / pars.id / zoo.id.
+    if (pathname === '/' || shouldServeLogin(pathname)) {
       let html;
 
-      if (pathname === '/signup' || pathname.startsWith('/signup/')) {
+      if (pathname === '/') {
+        html = getPortalPage(brand);
+      } else if (pathname === '/signup' || pathname.startsWith('/signup/')) {
         html = getSignupPage(request.url, brand);
       } else if (pathname === '/forget' || pathname.startsWith('/forget/')) {
         html = getForgotPage(request.url, brand);
