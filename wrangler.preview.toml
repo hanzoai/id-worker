@@ -1,0 +1,22 @@
+# PREVIEW-ONLY config — publishes to *.workers.dev with NO production routes.
+# Used to validate the /v1/iam/* canonical-path migration without touching
+# the live hanzo.id / lux.id / zoo.id / pars.id front door.
+# Deploy:  wrangler deploy -c wrangler.preview.toml
+# Brand under test is selected via IAM_DEFAULT_ORG (workers.dev host has no
+# tenant-catalog entry, so it falls back to this default).
+name = "hanzo-id-worker-preview"
+main = "src/worker.js"
+compatibility_date = "2024-01-01"
+workers_dev = true
+
+# NO `routes` block — this is the whole point. Preview is isolated on
+# workers.dev and can never bind a production hostname.
+
+[vars]
+IAM_ORIGIN = "https://iam.hanzo.ai"
+
+# Brand selector for the preview. Override per deploy to render each brand:
+#   wrangler deploy -c wrangler.preview.toml --var IAM_DEFAULT_ORG:lux
+IAM_DEFAULT_ORG = "hanzo"
+
+MARKETING_ORIGIN = "https://hanzo-id.pages.dev"
