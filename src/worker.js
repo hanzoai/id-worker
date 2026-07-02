@@ -190,7 +190,6 @@ const LOGIN_PATHS = [
 const IAM_PATHS = [
   '/v1/iam/',       // canonical /v1/iam mount (HIP-0026 compliant). MUST come first
                     // since /v1/iam/oauth/* would otherwise miss the /oauth/ rule too.
-  '/api/',
   '/oauth/',
   '/login/oauth/',
   '/result',
@@ -2002,7 +2001,7 @@ export default {
     }
 
     // OAuth callback from social providers (GitHub, Google, etc.)
-    // Handle server-side: read context cookie, call IAM /api/login, redirect to app.
+    // Handle server-side: read context cookie, call IAM /v1/iam/login, redirect to app.
     // IAM's SPA callback relies on sessionStorage which breaks through the proxy,
     // so we handle the full exchange here instead.
     if (pathname === '/callback') {
@@ -2048,7 +2047,7 @@ export default {
           organization = CLIENT_APP_MAP[stateClientId].organization;
         }
 
-        // Call IAM's /api/login to process the social provider callback server-side.
+        // Call IAM's /v1/iam/login to process the social provider callback server-side.
         // This replicates what IAM's SPA callback component does.
         // IAM expects state to be the authState config value ("hanzo"), NOT the
         // IAM-encoded state from GitHub. The encoded state was only for context extraction.
@@ -2340,15 +2339,11 @@ export default {
         if (contentType.includes('json') || contentType.includes('text')) {
           const body = await response.text();
           let rewritten = body.replaceAll('iam.hanzo.ai', 'hanzo.id');
-          // Normalize legacy IAM paths to RFC standard paths
+          // Normalize legacy IAM paths to RFC standard paths. IAM's discovery
+          // doc advertises canonical /v1/iam/oauth/* natively (HIP-0026); the
+          // /api/* → /oauth/* rewrite bridge is gone (decomplect, one way).
           rewritten = rewritten.replaceAll('/login/oauth/authorize', '/oauth/authorize');
-          rewritten = rewritten.replaceAll('/api/login/oauth/access_token', '/oauth/token');
-          rewritten = rewritten.replaceAll('/api/login/oauth/refresh_token', '/oauth/token');
-          rewritten = rewritten.replaceAll('/api/login/oauth/introspect', '/oauth/introspect');
-          rewritten = rewritten.replaceAll('/api/login/oauth/revoke', '/oauth/revoke');
           rewritten = rewritten.replaceAll('/login/oauth/logout', '/oauth/logout');
-          rewritten = rewritten.replaceAll('/api/login/oauth/device', '/oauth/device');
-          rewritten = rewritten.replaceAll('/api/userinfo', '/oauth/userinfo');
           const newHeaders = new Headers(response.headers);
           const location = newHeaders.get('location');
           if (location && location.includes('iam.hanzo.ai')) {
