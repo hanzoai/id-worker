@@ -987,11 +987,12 @@ function getLoginPage(url, brand) {
         btn.classList.add('loading');
         btn.textContent = 'Signing in...';
 
-        loginConfigPromise.then(function() {
-          return fetch(origin + '/v1/iam/login?' + buildApiLoginParams().toString(), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+        // ONE login POST, optionally carrying the second-factor fields. IAM verifies
+        // the passcode against the user it resolves from these SAME credentials
+        // (stateless — no MFA session cookie needed), so the challenge completes with
+        // a second POST here rather than a broken redirect.
+        function postLogin(extra) {
+          var payload = {
             type: 'token',
             username: email,
             password: password,
@@ -999,31 +1000,83 @@ function getLoginPage(url, brand) {
             application: loginApp,
             signinMethod: 'Password',
             language: navigator.language || 'en',
-          }),
-          credentials: 'include',
+          };
+          if (extra) { for (var k in extra) { payload[k] = extra[k]; } }
+          return loginConfigPromise.then(function() {
+            return fetch(origin + '/v1/iam/login?' + buildApiLoginParams().toString(), {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload),
+              credentials: 'include',
+            });
+          }).then(function(res) { return res.json(); });
+        }
+
+        function redirectSuccess(data) {
+          if (redirectUri) {
+            var sep = redirectUri.indexOf('?') >= 0 ? '&' : '?';
+            window.location.href = redirectUri + sep
+              + 'access_token=' + encodeURIComponent(data.data)
+              + '&refresh_token=' + encodeURIComponent(data.data2 || '')
+              + '&state=' + encodeURIComponent(state)
+              + '&provider=hanzo&status=200';
+          } else {
+            window.location.href = '/login';
+          }
+        }
+
+        // MFA-required (IAM returns data === "NextMfa" + allowed methods in data2):
+        // swap the card for a code entry and complete the login with the passcode.
+        function showMfaChallenge(allow) {
+          var mfaType = (allow && allow.length) ? allow[0] : 'app';
+          var card = document.querySelector('.auth-card');
+          card.innerHTML =
+            '<div class="auth-header"><h2>Two-factor authentication</h2>'
+            + '<p>Enter the 6-digit code from your authenticator app.</p></div>'
+            + '<div id="error-msg" class="error-msg"></div>'
+            + '<form id="mfaForm"><div class="form-group">'
+            + '<label for="mfa-code">Authentication code</label>'
+            + '<input type="text" id="mfa-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="123456" required autofocus />'
+            + '</div><button type="submit" class="btn btn-primary" id="mfaBtn" style="margin-top:1rem;border:none;">Verify</button></form>'
+            + '<div class="footer-links"><p><a href="/login">Back to sign in</a></p></div>';
+          var mErr = document.getElementById('error-msg');
+          document.getElementById('mfaForm').addEventListener('submit', function(ev) {
+            ev.preventDefault();
+            var code = (document.getElementById('mfa-code').value || '').trim();
+            var mbtn = document.getElementById('mfaBtn');
+            mErr.style.display = 'none';
+            mbtn.classList.add('loading');
+            mbtn.textContent = 'Verifying...';
+            postLogin({ mfaType: mfaType, passcode: code }).then(function(d) {
+              mbtn.classList.remove('loading');
+              mbtn.textContent = 'Verify';
+              if (d.status === 'ok' && d.data && d.data !== 'NextMfa') {
+                redirectSuccess(d);
+              } else {
+                mErr.textContent = d.msg || 'Invalid code. Please try again.';
+                mErr.style.display = 'block';
+              }
+            }).catch(function() {
+              mbtn.classList.remove('loading');
+              mbtn.textContent = 'Verify';
+              mErr.textContent = 'Unable to verify. Please try again.';
+              mErr.style.display = 'block';
+            });
           });
-        })
-        .then(function(res) { return res.json(); })
-        .then(function(data) {
+        }
+
+        postLogin().then(function(data) {
           btn.classList.remove('loading');
           btn.textContent = 'Sign in';
-          if (data.status === 'ok' && data.data) {
-            if (redirectUri) {
-              var sep = redirectUri.indexOf('?') >= 0 ? '&' : '?';
-              window.location.href = redirectUri + sep
-                + 'access_token=' + encodeURIComponent(data.data)
-                + '&refresh_token=' + encodeURIComponent(data.data2 || '')
-                + '&state=' + encodeURIComponent(state)
-                + '&provider=hanzo&status=200';
-            } else {
-              window.location.href = '/login';
-            }
+          if (data.status === 'ok' && data.data === 'NextMfa') {
+            showMfaChallenge(data.data2);
+          } else if (data.status === 'ok' && data.data) {
+            redirectSuccess(data);
           } else {
             errEl.textContent = data.msg || 'Invalid email or password';
             errEl.style.display = 'block';
           }
-        })
-        .catch(function() {
+        }).catch(function() {
           btn.classList.remove('loading');
           btn.textContent = 'Sign in';
           errEl.textContent = 'Unable to sign in. Please try again.';
