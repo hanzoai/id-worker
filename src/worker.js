@@ -1770,8 +1770,6 @@ export default {
     if (pathname === '/callback/platform/hanzo') {
       const code = url.searchParams.get('code');
       const state = url.searchParams.get('state');
-      const directAccessToken = url.searchParams.get('access_token');
-      const directRefreshToken = url.searchParams.get('refresh_token');
 
       const defaultIAMRedirect = 'https://platform.hanzo.ai/login';
       let redirect = defaultIAMRedirect;
@@ -1784,14 +1782,13 @@ export default {
 
       const redirectUrl = new URL(redirect);
 
-      // Direct token passthrough (from implicit flow / password login)
-      if (directAccessToken) {
-        redirectUrl.searchParams.set('access_token', directAccessToken);
-        redirectUrl.searchParams.set('refresh_token', directRefreshToken || '');
-        redirectUrl.searchParams.set('provider', 'hanzo');
-        redirectUrl.searchParams.set('status', '200');
-        return Response.redirect(redirectUrl.toString(), 302);
-      }
+      // NO direct-token passthrough. This branch accepted ?access_token= FROM
+      // THE CALLER and re-emitted it to the app as provider=hanzo&status=200 —
+      // i.e. anyone could hand a victim a link that logs them into a session the
+      // attacker chose, with no code, no state binding and no PKCE. The worker's
+      // own password login does not use it (it redirects to redirectUri itself),
+      // so it was reachable only by an attacker. ONE way to establish a session:
+      // the authorization-code exchange below.
 
       // Authorization code exchange flow
       if (!code) {
@@ -1853,8 +1850,6 @@ export default {
     if (pathname === '/callback/mpc/hanzo') {
       const code = url.searchParams.get('code');
       const state = url.searchParams.get('state');
-      const directAccessToken = url.searchParams.get('access_token');
-      const directRefreshToken = url.searchParams.get('refresh_token');
 
       const defaultMPCRedirect = 'https://mpc.hanzo.ai/auth/callback';
       let redirect = defaultMPCRedirect;
@@ -1867,13 +1862,10 @@ export default {
 
       const redirectUrl = new URL(redirect);
 
-      if (directAccessToken) {
-        redirectUrl.searchParams.set('access_token', directAccessToken);
-        redirectUrl.searchParams.set('refresh_token', directRefreshToken || '');
-        redirectUrl.searchParams.set('provider', 'hanzo');
-        redirectUrl.searchParams.set('status', '200');
-        return Response.redirect(redirectUrl.toString(), 302);
-      }
+      // NO direct-token passthrough here either — same login-injection hole as
+      // the platform callback. (It also read `directAccessToken`, which was only
+      // ever declared in the platform block, so this branch threw a
+      // ReferenceError the moment it was reached.)
 
       if (!code) {
         redirectUrl.searchParams.set('error', 'no_code');
