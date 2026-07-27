@@ -1,13 +1,24 @@
-name = "hanzo-id"
+# Production script name. The live deployment is `hanzo-id-production`
+# (the `hanzo-id` script exists but carries no routes). Keep this in sync
+# with the deployed script so `wrangler deploy` targets the right worker.
+name = "hanzo-id-production"
 main = "src/worker.js"
 compatibility_date = "2024-01-01"
 
 # All IAM login domains route through this single worker.
-# The worker resolves org-specific branding from the request hostname.
+# The worker resolves org-specific branding from the request hostname and
+# serves its self-contained branded /oauth/authorize, /login, /signup, /forget
+# (with cross-app silent SSO). Every other path falls through to MARKETING_ORIGIN
+# (the shared hanzo-id Pages project), so brand marketing/SPA is unaffected.
+#
+# Each brand .id domain is also a custom domain on the `hanzo-id` Pages project;
+# the Worker route takes precedence over the Pages custom domain, which is why
+# the branded login renders here instead of the (asset-404'd) Casdoor SPA.
 # DNS must be proxied through Cloudflare (orange cloud) for each domain.
 routes = [
   { pattern = "hanzo.id/*", zone_name = "hanzo.id" },
   { pattern = "lux.id/*", zone_name = "lux.id" },
+  { pattern = "zoolabs.id/*", zone_name = "zoolabs.id" },
   { pattern = "pars.id/*", zone_name = "pars.id" },
   { pattern = "iam.lux.network/*", zone_name = "lux.network" },
   { pattern = "id.lux.network/*", zone_name = "lux.network" },
