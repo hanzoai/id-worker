@@ -84,7 +84,7 @@ host-relative iss), CORS preflight + allowed-origin reflection + HSTS/XCTO/XFO,
 ### The one genuine functional gap — social provider login (pre-cutover blocker)
 
 The worker's `/callback` handler + provider-aware `/v1/iam/oauth/authorize?provider=…`
-hand a Google/GitHub OAuth **code** to the (Casdoor) backend's `/v1/iam/login`
+hand a Google/GitHub OAuth **code** to the live backend's `/v1/iam/login`
 for IdP-federation. **iam2 has no IdP-federation broker**: `login.go` is
 credential-only; provider records exist for rendering buttons (`get-app-login`,
 `auth/methods`) and for showing linked identities (`linked-accounts`), but nothing
@@ -115,7 +115,7 @@ cutover below.
 
 **Pre-flight (no prod change):**
 1. Deploy `cloud` with iam2 embedded, **shadow-first** (own prefix, e.g.
-   `/v2-iam`, alongside live Casdoor — MIGRATION.md Phase 4). Seed config from the
+   `/v2-iam`, alongside the live backend — MIGRATION.md Phase 4). Seed config from the
    same `init_data.json`. Confirm iam2 serves `get-app-login` + `login` + token +
    discovery against the real seeded orgs/apps.
 2. Import the user rows (password hashes verify as-is — argon2id golden vector,
@@ -127,7 +127,7 @@ cutover below.
 
 **Backend flip (iam.hanzo.ai):**
 4. Flip iam2 from the shadow prefix onto the canonical `/v1/iam/*` (+ root
-   `/.well-known/*`) in `cloud`; retire the Casdoor `iam` mount. iam2 stamps
+   `/.well-known/*`) in `cloud`; retire the old `iam` mount. iam2 stamps
    host-relative `iss`, so the worker's `iam.hanzo.ai→hanzo.id` body/Location
    rewrites are already moot. Rollback = revert the cloud image tag.
 
